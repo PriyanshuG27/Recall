@@ -12,6 +12,7 @@ pydantic-settings==2.14.1
 
 # Database & Storage
 psycopg[binary,pool]==3.3.4
+psycopg-pool==3.2.6
 
 # Security & Encryption
 cryptography==42.0.8

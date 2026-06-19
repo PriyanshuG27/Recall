@@ -177,6 +177,22 @@ frontend/extension/dist/
 # Generated PDFs
 docs/*.pdf
 
+# Generated HTML viewers (built from .md — not source)
+docs/PROMPTS.html
+docs/prompts.html
+
+# Personal build playbook — not for contributors
+docs/PROMPTS.md
+docs/PROMPTS.md.bak
+
+# Generated intermediate data files
+docs/prompts_data.json
+
+# One-off tooling / build scripts (not part of the project source)
+docs/reorganize_prompts.py
+docs/parse_prompts.py
+docs/generate_prompts_html.py
+
 # Agent Workspace Directories
 brain/
 convo_history/
