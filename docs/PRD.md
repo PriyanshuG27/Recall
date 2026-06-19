@@ -1,4 +1,4 @@
-﻿# PRD — Recall
+# PRD — Recall
 
 | Field | Value |
 |-------|-------|
@@ -67,7 +67,7 @@ Knowledge workers and students encounter valuable content throughout the day but
 | Feature | Description |
 |---------|-------------|
 | Telegram webhook ingestion | Receive text, URL, voice, PDF, image via bot |
-| AI cascade processing | Whisper -> Llama 3 -> summary + embedding, 5-tier fallback |
+| AI cascade processing | Whisper -> LLM -> summary + embedding, multi-tier fallback |
 | PostgreSQL storage | Encrypted raw_text, partitioned items table |
 | Semantic search | pgvector HNSW + GIN trigram hybrid search |
 | Mind map (Canvas) | Force-directed constellation, 60 FPS |

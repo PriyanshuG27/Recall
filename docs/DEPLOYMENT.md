@@ -1,4 +1,4 @@
-﻿# DEPLOYMENT — Recall
+# DEPLOYMENT — Recall
 
 | Field | Value |
 |-------|-------|
@@ -56,7 +56,7 @@
 
 1. `pip install modal` -> `modal token new` -> authenticate.
 2. Deploy Whisper endpoint: `modal deploy backend/modal_whisper.py`
-3. Deploy Llama 3 endpoint: `modal deploy backend/modal_llama.py`
+3. Deploy LLM endpoint: `modal deploy backend/modal_llm.py`
 4. Deploy MiniLM endpoint: `modal deploy backend/modal_embed.py`
 5. Copy `MODAL_API_TOKEN` from Modal dashboard -> Settings -> API Tokens.
 

@@ -1,4 +1,4 @@
-﻿# ERROR_HANDLING — Recall
+# ERROR_HANDLING — Recall
 
 | Field | Value |
 |-------|-------|
@@ -52,8 +52,7 @@ Task dequeued from Redis
 Try Tier 0 (Modal)
     FAIL -> Try Tier 1 (Groq)
     FAIL -> Try Tier 2 (Gemini)
-    FAIL -> Try Tier 3 (Ollama, if OLLAMA_HOST set)
-    FAIL -> Tier 4: Bookmark Fallback
+    FAIL -> Tier 3: Bookmark Fallback (Or Tier 4 if LOCAL_MODE=true)
         |
         v
 INSERT INTO items (source_type, source_url, title)  -- minimal fields only

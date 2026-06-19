@@ -1,4 +1,4 @@
-﻿# ENV_CONFIG — Recall
+# ENV_CONFIG — Recall
 
 | Field | Value |
 |-------|-------|
@@ -17,16 +17,17 @@
 | `DATABASE_URL` | Neon PostgreSQL pooled connection string | Neon dashboard -> Connection Details -> Pooled | **Required** | Must include `?sslmode=require` |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST endpoint | Upstash console -> REST API | **Required** | Ends in `.upstash.io` |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis auth token | Upstash console -> REST API | **Required** | — |
-| `GROQ_API_KEY` | Groq Cloud API (Tier 1 Whisper + Llama 3) | console.groq.com -> API Keys | Yes (Tier 1) | Without this, falls to Tier 2 |
-| `GEMINI_API_KEY` | Gemini 3.1 Flash-Lite (Tier 2 summarisation) | Google AI Studio -> Get API Key | Yes (Tier 2) | Without this, falls to Tier 3/4 |
+| `GROQ_API_KEY` | Groq Cloud API (Tier 1 Whisper-Turbo + Qwen3 / Llama 4) | console.groq.com -> API Keys | Yes (Tier 1) | Without this, falls to Tier 2 |
+| `GEMINI_API_KEY` | Gemini 3.1 Flash-Lite (Tier 2 fallback) | Google AI Studio -> Get API Key | Yes (Tier 2) | Without this, falls to Tier 3/4 |
 | `FERNET_KEY` | AES-128 symmetric encryption for raw_text + google_refresh_token | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` | **Required** | Rotation requires migrating all encrypted rows |
 | `JWT_SECRET` | Signs website session JWTs (7-day expiry, httpOnly cookie) | `python -c "import secrets; print(secrets.token_hex(32))"` | **Required** | Change requires all users to re-login |
 | `WEBSITE_URL` | Vercel frontend URL; used in OAuth redirect construction | Vercel dashboard after deploy | **Required** | Include `https://`, no trailing slash |
 | `GOOGLE_CLIENT_ID` | Google OAuth 2.0 client ID | Google Cloud Console -> Credentials | Yes (Drive) | — |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 client secret | Google Cloud Console -> Credentials | Yes (Drive) | — |
 | `GOOGLE_REDIRECT_URI` | OAuth callback URL registered in Google Cloud Console | Set to `https://<render-url>/auth/google/callback` | Yes (Drive) | Must match exactly what is in GCP |
-| `OLLAMA_HOST` | Ollama local model server URL (e.g. `http://localhost:11434`) | Self-hosted Ollama instance | Optional (Tier 3) | If absent, Tier 3 is skipped |
-| `COMPUTE_PROVIDER` | Override cascade tier for testing (e.g. `groq`, `gemini`, `ollama`) | — | Optional | Development / CI only |
+| `OLLAMA_HOST` | Ollama local model server URL (e.g. `http://localhost:11434`) | Self-hosted Ollama instance | Optional | Active in local development cascade |
+| `LOCAL_MODE` | Boolean flag to prioritize local Ollama execution over API tiers | Set to `true` or `false` | Optional | Development only; default: `false` |
+| `COMPUTE_PROVIDER` | Override cascade tier for testing (e.g. `groq`, `gemini`, `ollama`, `modal`) | — | Optional | Development / CI only |
 
 ---
 

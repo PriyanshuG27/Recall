@@ -1,4 +1,4 @@
-﻿# BACKEND_SCHEMA — Recall
+# BACKEND_SCHEMA — Recall
 
 | Field | Value |
 |-------|-------|
@@ -79,7 +79,7 @@ CREATE TABLE items_y2026m07 PARTITION OF items
 | source_type | VARCHAR(20) | Enum: url / voice / pdf / image / text; drives pipeline routing |
 | source_url | TEXT | Original URL for url/voice/YouTube items; NULL for direct uploads |
 | raw_text | TEXT | Full extracted/transcribed text; Fernet AES-128 encrypted at rest |
-| summary | TEXT | Llama 3 generated summary; **plaintext** — required for GIN index |
+| summary | TEXT | LLM generated summary; **plaintext** — required for GIN index |
 | title | VARCHAR(500) | Extracted or generated title; plaintext |
 | embedding | VECTOR(384) | MiniLM-L6-v2 output; 384 dimensions; used for HNSW cosine search |
 | tags | TEXT[] | LLM-generated tags; Postgres native array; filterable with @> operator |

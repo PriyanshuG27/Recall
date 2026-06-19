@@ -16,10 +16,10 @@
 | Frontend | React + Vite | Vercel free | Fast builds, edge CDN, zero config for SPA |
 | Database | PostgreSQL + pgvector + pg_trgm | Neon free (0.5 GB) | Single DB for relational + vector + full-text; no separate vector DB |
 | Task Queue | Upstash Redis (REST) | Free (10K cmd/day) | Serverless Redis; no persistent connection needed; atomic ZADD for rate limiting |
-| AI Tier 0 | Modal serverless GPU | Pay-per-second | Whisper large-v3 + Llama 3 8B + MiniLM — highest quality, no monthly fee when idle |
-| AI Tier 1 | Groq Cloud API | Free tier | Fastest inference for Whisper + Llama 3; fallback when Modal cold |
+| AI Tier 0 | Modal serverless GPU | Pay-per-second | Whisper large-v3 + Llama 3.3 70B + MiniLM — highest quality, no monthly fee when idle |
+| AI Tier 1 | Groq Cloud API | Free tier | Whisper-Turbo + Qwen3-32b (60 RPM) + Llama 4 Scout (long context) |
 | AI Tier 2 | Gemini 3.1 Flash-Lite | Free (30 RPM / 1500 RPD) | Large context window; fallback for summarisation |
-| AI Tier 3 | Ollama (local) | Optional | Developer/self-host escape hatch; activated by OLLAMA_HOST env var |
+| AI Tier 3 | Ollama (local) | Optional | Developer/self-host escape hatch; active when LOCAL_MODE=true |
 | AI Tier 4 | Bookmark fallback | — | Guarantees zero data loss; item saved without AI enrichment |
 | Scheduler | APScheduler (in-process) | — | No extra infra; runs inside FastAPI on Render |
 | Keepalive | Uptime Robot | Free (5-min ping) | Prevents Render free-tier cold starts |
@@ -56,14 +56,14 @@
                         └──────────┬──────────────────────┘
                     ┌──────────────┼──────────────────┐
                     ▼              ▼                   ▼
-           ┌──────────────┐ ┌──────────┐   ┌──────────────────┐
-           │   Neon DB    │ │ Upstash  │   │  AI Cascade      │
-           │  PostgreSQL  │ │  Redis   │   │  T0: Modal GPU   │
-           │  + pgvector  │ │  Queue   │   │  T1: Groq        │
-           │  + pg_trgm   │ │  + Rate  │   │  T2: Gemini      │
-           └──────────────┘ │  Limiter │   │  T3: Ollama      │
-                            └──────────┘   │  T4: Bookmark    │
-                                           └──────────────────┘
+            ┌──────────────┐ ┌──────────┐   ┌──────────────────┐
+            │   Neon DB    │ │ Upstash  │   │  AI Cascade      │
+            │  PostgreSQL  │ │  Redis   │   │  T0: Modal GPU   │
+            │  + pgvector  │ │  Queue   │   │  T1: Groq        │
+            │  + pg_trgm   │ │  + Rate  │   │  T2: Gemini      │
+            └──────────────┘ │  Limiter │   │  T3: Bookmark    │
+                             └──────────┘   │  T4: Ollama (dev)│
+                                            └──────────────────┘
 ```
 
 ---
@@ -95,7 +95,7 @@ User sends message to Telegram
 
 Worker dequeues task:
     -> Detect content type (voice / URL / PDF / image / text)
-    -> AI Cascade (T0 -> T4)
+    -> AI Cascade (T0 -> T3/T4)
         -> Transcription / extraction
         -> Summarisation
         -> Embedding (MiniLM 384-dim)

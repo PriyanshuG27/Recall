@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     SCRAPERAPI_KEY: str | None = None
 
     ENV: str = "development"
+    LOCAL_MODE: bool = False
+
 
     # ==========================================================================
     # CONFIGURATION & OVERRIDES

@@ -1,4 +1,4 @@
-﻿# SCHEDULER — Recall
+# SCHEDULER — Recall
 
 | Field | Value |
 |-------|-------|
@@ -58,7 +58,7 @@ For each user with >= 10 new items since last clustering run:
     -> Run Louvain community detection
     -> For each community:
         -> Compute centroid (mean embedding)
-        -> Generate label via Llama 3: "What theme connects these items?"
+        -> Generate label via LLM: "What theme connects these items?"
     -> DELETE existing semantic_hubs for user
     -> INSERT new hubs (label, centroid, member_ids)
     -> Broadcast via WS /ws/{token}: {type: "hubs_updated", hubs: [...]}

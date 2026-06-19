@@ -1,4 +1,4 @@
-﻿# TESTING — Recall
+# TESTING — Recall
 
 | Field | Value |
 |-------|-------|
@@ -44,8 +44,8 @@
 |------|---------------|----------|
 | Tier 0 fails | Modal returns 500 | Tier 1 (Groq) is called |
 | Tiers 0-1 fail | Modal + Groq return 500 | Tier 2 (Gemini) is called |
-| Tiers 0-2 fail; OLLAMA_HOST not set | All three fail; no Ollama | Tier 4 bookmark saved |
-| All tiers fail | All return 500 | dead_letter_queue row inserted; user notified |
+| Tiers 0-2 fail | All three fail | Tier 3 bookmark saved |
+| All cascade tiers fail | All return 500 | dead_letter_queue row inserted; user notified |
 | COMPUTE_PROVIDER=groq | Override set | Tier 1 called directly; Tier 0 skipped |
 
 **Method**: Dependency-inject AI client wrappers; mock each to raise specific exceptions.

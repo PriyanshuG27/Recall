@@ -1,4 +1,4 @@
-﻿# IMPLEMENTATION_PLAN — Recall
+# IMPLEMENTATION_PLAN — Recall
 
 | Field | Value |
 |-------|-------|
@@ -46,8 +46,8 @@ Phase 8: Chrome Extension
 ## Phase 2 — Voice Transcription + AI Summarisation
 
 **Deliverables**:
-- Modal endpoints: Whisper large-v3, Llama 3 8B.
-- AI cascade: Tier 0 (Modal) -> Tier 1 (Groq) -> Tier 2 (Gemini) -> Tier 4 (bookmark).
+- Modal endpoints: Whisper, LLM.
+- AI cascade: Tier 0 (Modal) -> Tier 1 (Groq) -> Tier 2 (Gemini) -> Tier 3 (bookmark).
 - Voice note ingestion: yt-dlp download -> Whisper -> summary.
 - Fernet encryption of raw_text.
 - Dead letter queue + user notification on cascade exhaustion.
@@ -125,7 +125,7 @@ Phase 8: Chrome Extension
 ## Phase 6 — Spaced Repetition + Scheduler
 
 **Deliverables**:
-- Quiz generation via Llama 3 (stored in quizzes table).
+- Quiz generation via LLM (stored in quizzes table).
 - GET /api/quizzes/due + POST /api/quizzes/{id}/answer.
 - SM-2 algorithm: update ease_factor, interval_days, next_review.
 - /quiz command in bot: inline keyboard with 4 options.

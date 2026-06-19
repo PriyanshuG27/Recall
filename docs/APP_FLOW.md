@@ -57,9 +57,9 @@ User sends URL
 ```
 User sends voice note (or audio file)
     -> yt-dlp downloads audio stream
-    -> AI Cascade Tier 0: Modal Whisper large-v3 transcription
+    -> AI Cascade Tier 0: Modal Whisper transcription
        (fallback: Groq Whisper -> Gemini STT)
-    -> Transcribed text -> Llama 3 summary + quiz generation
+    -> Transcribed text -> LLM summary + quiz generation
     -> Embedding via MiniLM-L6-v2
     -> INSERT items (source_type='voice') + INSERT quizzes
     -> Bot replies: transcript excerpt + summary
@@ -84,7 +84,7 @@ User sends PDF file
     -> PyMuPDF extracts text (page by page)
     -> Text chunked (max 512 tokens/chunk)
     -> Each chunk embedded via MiniLM
-    -> Llama 3 produces full document summary
+    -> LLM produces full document summary
     -> INSERT items (source_type='pdf', one row per document)
     -> Bot replies: document title + summary + page count
 ```
@@ -95,7 +95,7 @@ User sends PDF file
 User sends image
     -> Tesseract OCR -> extracted text
     -> MiniLM embedding on OCR text
-    -> Llama 3 summary if text > 50 chars; else caption only
+    -> LLM summary if text > 50 chars; else caption only
     -> INSERT items (source_type='image')
     -> Bot replies: extracted text preview + summary
 ```
@@ -105,7 +105,7 @@ User sends image
 ```
 User sends text message (not a URL)
     -> Direct to MiniLM embedding
-    -> Llama 3 summary (if > 100 chars)
+    -> LLM summary (if > 100 chars)
     -> INSERT items (source_type='text')
     -> Bot replies: confirmation + generated tags
 ```
