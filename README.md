@@ -14,4 +14,4 @@ Please refer to the detailed deployment documentation located at:
 ## Project Structure
 - `backend/`: FastAPI API endpoint, database schema, seeder scripts, tests, and task worker queues.
 - `frontend/`: React + Vite SPA, canvas mind map renderer, login page, settings, and components.
-- `docs/`: Product briefs, technical plans, and API blueprints.
+- `docs/`: Product briefs, technical plans, and API blueprints. 
