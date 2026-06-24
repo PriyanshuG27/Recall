@@ -750,7 +750,7 @@ async def transcribe(audio_bytes: bytes) -> dict:
     result = model.transcribe(audio_bytes)
     return {"transcript": result["text"], "language": result["language"]}
 
-Create backend/modal_apps/modal_llm.py — LLM (Llama 3.3 70B) summarisation:
+Create backend/modal_apps/modal_llm.py — Llama 3.3 70B summarisation:
 Input: {"text": str, "task": "summarise"|"quiz"}
 Output: {"summary": str} or {"question": str, "options": list[str], "correct_index": int, "explanation": str}
 
@@ -760,7 +760,7 @@ Output: {"embedding": list[float]}  # 384 dimensions
 
 Rules:
 - All Modal endpoints must have timeout=30 set (matches AI_CASCADE.md Tier 0 timeout).
-- GPU type: T4 (sufficient for Whisper large-v3 and LLM summarisation).
+- GPU type: T4 or A10G (sufficient for Whisper large-v3 and Llama 3.3 70B).
 - Each endpoint is a separate modal.App — deploy independently.
 - Modal endpoints must validate input size: reject audio > 25 MB, text > 8000 tokens.
 - Cold start message: logged but NOT surfaced to user — user already got "Processing..." ACK.
@@ -779,18 +779,21 @@ Gate Check:
 **Skills:** `error-handling-patterns` · `async-python-patterns` · `python-pro`
 
 ```
-Create backend/services/ai_cascade.py — the 4-tier fallback orchestrator (5-tier when LOCAL_MODE=true).
+Create backend/services/ai_cascade.py — the fallback orchestrator.
 
 class AICascade:
     async def transcribe(self, audio_bytes: bytes, chat_id: str) -> CascadeResult
     async def summarise(self, text: str, chat_id: str) -> CascadeResult
     async def embed(self, text: str) -> list[float]
 
-Each method tries tiers in order (from AI_CASCADE.md):
+Each method tries tiers in order (from AI_CASCADE.md, with local dev LOCAL_MODE adjustment):
+Default Cascade:
 Tier 0: Modal endpoint (timeout=30 s)
-Tier 1: Groq API (timeout=20 s; uses whisper-large-v3-turbo with fallback to whisper-large-v3; Qwen3-32b with Llama 4 Scout overflow)
+Tier 1: Groq API (timeout=20 s, STT uses Whisper Turbo, falls back to Whisper Large-v3; LLM uses Qwen3-32b as primary, Llama 4 Scout as overflow)
 Tier 2: Gemini 3.1 Flash-Lite (timeout=20 s)
-Tier 3: Bookmark fallback (or Ollama if LOCAL_MODE=true; timeout=60 s)
+Tier 3: Return CascadeResult(success=False, tier_reached=3)  # Bookmark fallback
+If LOCAL_MODE=true is enabled:
+Ollama is tried as Tier 0, shifting Modal/Groq/Gemini down.
 
 @dataclass
 class CascadeResult:
@@ -805,14 +808,14 @@ Rules:
 - Catch specific exceptions: httpx.TimeoutException, httpx.HTTPStatusError — not bare except.
 - Log which tier was used for every successful result (for monitoring).
 - COMPUTE_PROVIDER env var overrides tier selection (for testing: groq, gemini, ollama, modal).
-- Cascade exhaustion must write to dead_letter_queue BEFORE saving bookmark fallback.
+- Cascade exhaustion must write to dead_letter_queue BEFORE sending user notification.
 - NEVER log the transcript or summary content — only log tier number and success/failure.
 
 Gate Check:
 [ ] Mock Tier 0 failure → Tier 1 is called (verified via mock call count)
 [ ] Mock Tiers 0-2 failure → dead_letter_queue entry created
 [ ] COMPUTE_PROVIDER=groq skips Tier 0 entirely
-[ ] Unit test covers all 5 cases from TESTING.md §2
+[ ] Unit test covers all 4 cases from TESTING.md §2 (plus LOCAL_MODE cases if applicable)
 [ ] No transcript content appears in test logs (caplog assertion)
 ```
 
@@ -1026,15 +1029,33 @@ Gate Check:
 Implement URL content ingestion in backend/services/ingestion/url_ingester.py.
 
 Pipeline:
-1. Detect if URL is Instagram/YouTube (special handling) or plain web URL.
-2. For plain URLs: use httpx + BeautifulSoup to scrape <title> and visible text.
+1. Detect if URL is a Google Drive link (drive.google.com), Instagram/YouTube (special handling), or plain web URL.
+2. For Google Drive links:
+   - Extract the file ID from the URL.
+   - If the file is public, download it directly using requests/httpx without credentials.
+   - If the file is private:
+     - Check if `users.google_refresh_token` is present for the user in the database.
+     - If not present: return a descriptive error that propagates to the Telegram bot:
+       "⚠️ I can't access that Google Drive link because it's private. Please connect your Google Drive first using /connect_drive or via the web dashboard."
+     - If present: decrypt token, exchange for an access token via Google endpoint, and fetch the file via the Google Drive API.
+   - Ephemeral Storage Safeguards:
+     - Enforce a strict file size limit of 100 MB max before downloading.
+     - Download file to a unique path in `/tmp/` (e.g. using `tempfile.NamedTemporaryFile`).
+     - Wrap file ingestion in a `try/finally` block to guarantee the local file is deleted immediately after parsing.
+     - Limit ingestion tasks using `asyncio.Semaphore(3)`.
+   - Pipeline routing:
+     - If PDF: delegate to PDF parser.
+     - If audio: delegate to Whisper.
+     - If image: delegate to OCR parser.
+     - If Google Doc: export/convert to plain text using Google Docs API export format.
+3. For plain URLs: use httpx + BeautifulSoup to scrape <title> and visible text.
    - Strip scripts, styles, nav, footer, header tags.
    - Truncate text to 4000 chars.
-3. For Instagram URLs: try ZenRows (ZENROWS_KEY) → ScrapingBee (SCRAPINGBEE_KEY) → ScraperAPI (SCRAPERAPI_KEY) → yt-dlp → bookmark fallback.
+4. For Instagram URLs: try ZenRows (ZENROWS_KEY) → ScrapingBee (SCRAPINGBEE_KEY) → ScraperAPI (SCRAPERAPI_KEY) → yt-dlp → bookmark fallback.
    - Cookie rotation and User-Agent spoofing must be used from Day 1 (see APP_FLOW.md).
-4. Fernet-encrypt the raw_text before DB write.
-5. INSERT into items: source_type='url', source_url=url, raw_text=<encrypted>, title=<title>
-6. Bot reply: "{title}\n\n{first 200 chars of scraped text}\n\nSaved ✓"
+5. Fernet-encrypt the raw_text before DB write.
+6. INSERT into items: source_type='url', source_url=url, raw_text=<encrypted>, title=<title>
+7. Bot reply: "{title}\n\n{first 200 chars of scraped text}\n\nSaved ✓"
 
 Rules:
 - httpx timeout: 10 s. Never block indefinitely on slow sites.
@@ -1046,6 +1067,8 @@ Rules:
 Gate Check:
 [ ] Forwarding https://example.com creates an items row with title and encrypted raw_text
 [ ] Decrypting raw_text with FERNET_KEY returns the original scraped text
+[ ] Pasting a public Google Drive PDF downloads it to a temp file, extracts text, deletes file, and creates a DB row
+[ ] Pasting a private Google Drive link without connected account replies with the "not connected" warning
 [ ] Scraping timeout after 10 s falls back to bookmark
 [ ] Unit test: test_url_ingester.py mocks httpx and verifies DB insert fields
 ```
@@ -2734,6 +2757,7 @@ Job 1 — reminders_dispatcher (every 1 minute):
 
 Job 2 — louvain_clustering (daily 02:00 UTC):
   For each user with >= 10 new items since last run:
+    Fetch embeddings → build k-NN graph (cosine > 0.75) → run community_louvain.best_partition()
     For each community: compute centroid, generate label via LLM
     DELETE existing hubs → INSERT new hubs → broadcast via WS hubs_updated event
 
@@ -3098,7 +3122,7 @@ Implement GET /auth/google and GET /auth/google/callback in backend/routes/auth.
 GET /auth/google:
 1. Generate state = JWT {chat_id: from query or session, exp: now + 10 min}
 2. Build Google OAuth URL with:
-   scope = "https://www.googleapis.com/auth/drive.file"  (ONLY this scope — non-negotiable)
+   scope = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly"  (ONLY these scopes — non-negotiable)
    redirect_uri = GOOGLE_REDIRECT_URI
    state = state_token
    access_type = "offline"
@@ -3112,11 +3136,11 @@ GET /auth/google/callback:
 4. Fernet-encrypt refresh_token.
 5. UPDATE users SET google_refresh_token = <encrypted> WHERE telegram_chat_id = $1
 6. Broadcast WS event: {"type": "google_connected"} to the user's WS connection.
-7. Send Telegram bot message: "✅ Google Drive connected! Your knowledge will be backed up daily."
+7. Send Telegram bot message: "✅ Google Drive connected! Your knowledge will be backed up daily, and you can now paste private Google Drive links to import files directly."
 8. Return redirect to WEBSITE_URL/dashboard.
 
 Rules (CRITICAL — security):
-- scope MUST be drive.file ONLY — never request broader Drive scope.
+- scope MUST request drive.file and drive.readonly ONLY — never request broader Drive scopes.
 - access_token must NEVER be stored — only refresh_token (Fernet-encrypted).
 - State JWT validation: use hmac.compare_digest — prevents timing attacks.
 - State JWT expiry: 10 minutes — prevents CSRF replay.
@@ -3418,7 +3442,7 @@ Write the complete pytest test suite for all critical paths identified in TESTIN
 
 Test files to create:
 - tests/test_idempotency.py    → all 4 cases from TESTING.md §1
-- tests/test_cascade.py        → all 5 cases from TESTING.md §2
+- tests/test_cascade.py        → all 4 cases from TESTING.md §2 (plus LOCAL_MODE cases)
 - tests/test_rate_limiter.py   → all 5 cases from TESTING.md §3
 - tests/test_sm2.py            → all 5 cases from TESTING.md §4
 - tests/test_auth_twa.py       → all 4 cases from TESTING.md §5 TWA section
@@ -3567,7 +3591,7 @@ Scenario 2 — Voice note save (cascade Tier 0 → Tier 1 fallback):
   2. Mock Modal to fail (500)
   3. Mock Groq to succeed with transcript
   4. Assert: items row created with source_type='voice' and embedding
-  5. Assert: dead_letter_queue has 0 rows (cascade succeeded before Tier 4)
+  5. Assert: dead_letter_queue has 0 rows (cascade succeeded before fallback)
   6. Assert: quiz row created for the item
 
 Scenario 3 — Full cascade exhaustion:
