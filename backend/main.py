@@ -87,18 +87,61 @@ class SecretMaskingFilter(logging.Filter):
             record.args = tuple(new_args)
         return True
 
-# Initialize standard logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-)
+# Custom premium formatter for logging
+class BeautifulLoggerFormatter(logging.Formatter):
+    CYAN = "\x1b[36m"
+    YELLOW = "\x1b[33m"
+    RED = "\x1b[31m"
+    BOLD_RED = "\x1b[31;1m"
+    GREY = "\x1b[90m"
+    RESET = "\x1b[0m"
 
-# Apply secret masking filter to all handlers on the root logger
+    def format(self, record: logging.LogRecord) -> str:
+        # Time format: HH:MM:SS
+        time_str = self.formatTime(record, "%H:%M:%S")
+        
+        # Color-coded level mapping with custom icons
+        level = record.levelname
+        if record.levelno == logging.INFO:
+            level_str = f"{self.CYAN}ℹ INFO{self.RESET}"
+        elif record.levelno == logging.WARNING:
+            level_str = f"{self.YELLOW}⚠ WARN{self.RESET}"
+        elif record.levelno == logging.ERROR:
+            level_str = f"{self.RED}✗ ERROR{self.RESET}"
+        elif record.levelno == logging.CRITICAL:
+            level_str = f"{self.BOLD_RED}💥 CRITICAL{self.RESET}"
+        else:
+            level_str = level
+
+        # Clean up logger name prefix (e.g. backend.routes.webhook -> routes.webhook)
+        logger_name = record.name
+        if logger_name.startswith("backend."):
+            logger_name = logger_name[8:]
+
+        # Format line: [time] [level] [name]: message
+        formatted = f"[{time_str}] [{level_str}] [{self.GREY}{logger_name}{self.RESET}] {record.getMessage()}"
+        
+        # Handle exceptions
+        if record.exc_info:
+            formatted += "\n" + self.formatException(record.exc_info)
+            
+        return formatted
+
+
+# Initialize standard logging configuration
+logging.basicConfig(level=logging.INFO)
+
+# Apply secret masking filter and the premium BeautifulLoggerFormatter to all handlers
 mask_filter = SecretMaskingFilter()
 root_logger = logging.getLogger()
 root_logger.addFilter(mask_filter)
+
+beautiful_formatter = BeautifulLoggerFormatter()
+
 for handler in root_logger.handlers:
     handler.addFilter(mask_filter)
+    handler.setFormatter(beautiful_formatter)
+
 
 # Suppress verbose httpx request logging to prevent token leakage in info logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -118,6 +161,7 @@ async def lifespan(app: FastAPI):
     # --- STARTUP ---
     from backend.config import settings
     from backend.db.connection import open_pool
+    import asyncio
 
     if settings is None:
         raise RuntimeError(
@@ -132,9 +176,61 @@ async def lifespan(app: FastAPI):
     # Open the async DB connection pool
     await open_pool()
 
+    # Start the background task worker loop (skipped in test mode to prevent test suites from hanging)
+    import sys
+    if settings.ENV != "test" and "pytest" not in sys.modules:
+        from backend.worker import start_worker_task
+        app.state.worker_task = asyncio.create_task(start_worker_task())
+        logger.info("Recall task worker loop started in background.")
+
+    # Auto-retry recent DLQ tasks on startup (limit 5, failed < 24h ago)
+    try:
+        from backend.db.connection import _pool
+        from backend.services.redis_client import redis
+        import json
+        
+        if _pool is not None:
+            async with _pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        SELECT id, task_payload FROM dead_letter_queue
+                        WHERE retried = FALSE AND failed_at > NOW() - INTERVAL '24 hours'
+                        LIMIT 5;
+                        """
+                    )
+                    rows = await cur.fetchall()
+                    
+                    requeued_count = 0
+                    for row in rows:
+                        dlq_id, payload_raw = row
+                        if isinstance(payload_raw, str):
+                            payload = json.loads(payload_raw)
+                        else:
+                            payload = payload_raw
+                            
+                        await redis.lpush("recall:tasks", json.dumps(payload))
+                        await cur.execute("UPDATE dead_letter_queue SET retried = TRUE WHERE id = %s;", (dlq_id,))
+                        requeued_count += 1
+                        
+                    if requeued_count > 0:
+                        await conn.commit()
+                        logger.info("Auto-requeued %d unretried tasks from DLQ on startup", requeued_count)
+    except Exception as startup_retry_err:
+        logger.error("Failed to execute startup DLQ auto-retry: %s", startup_retry_err)
+
     yield  # ← application runs here
 
     # --- SHUTDOWN ---
+    # Cancel the task worker loop
+    if hasattr(app.state, "worker_task"):
+        app.state.worker_task.cancel()
+        try:
+            await app.state.worker_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Recall task worker loop stopped.")
+
     from backend.db.connection import close_pool
     await close_pool()
     logger.info("Recall API shutdown complete.")

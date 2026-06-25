@@ -27,11 +27,41 @@ class ItemCreateRequest(BaseModel):
     url: str = Field(..., description="The URL of the item to add.")
     title: Optional[str] = Field(None, description="The optional title of the item.")
 
+
+class PaginatedItem(BaseModel):
+    id: int = Field(..., description="Internal surrogate ID of the item.")
+    title: Optional[str] = Field(None, description="Extracted or generated title.")
+    summary: str = Field(..., description="LLM-generated plain-text summary.")
+    source_type: str = Field(..., description="Type of ingest source.")
+    source_url: Optional[str] = Field(None, description="Original source URL.")
+    tags: List[str] = Field(default_factory=list, description="List of auto-generated tags.")
+    created_at: datetime = Field(..., description="Item creation timestamp.")
+
+
+class PaginatedItemsResponse(BaseModel):
+    items: List[PaginatedItem] = Field(..., description="List of items for the current page.")
+    total: int = Field(..., description="Total number of items matching filters.")
+    page: int = Field(..., description="Current page number.")
+    pages: int = Field(..., description="Total number of pages available.")
+
+class TagCountResponse(BaseModel):
+    tag: str = Field(..., description="The tag string.")
+    count: int = Field(..., description="The frequency count of this tag.")
+
 # ---------------------------------------------------------------------------
 # Search schemas
 # ---------------------------------------------------------------------------
 class SearchRequest(BaseModel):
     query: str = Field(..., description="Search query string.")
+    limit: int = Field(5, ge=1, description="Maximum number of results to return (default 5).")
+
+class SearchResponseItem(BaseModel):
+    id: int = Field(..., description="Internal surrogate ID of the item.")
+    title: Optional[str] = Field(None, description="Extracted or generated title.")
+    summary: str = Field(..., description="LLM-generated plain-text summary.")
+    source_type: str = Field(..., description="Type of ingest source.")
+    source_url: Optional[str] = Field(None, description="Original source URL.")
+    created_at: str = Field(..., description="Creation timestamp in ISO format.")
 
 class SearchResultItem(BaseModel):
     item: ItemResponse = Field(..., description="Matched item metadata.")
@@ -40,25 +70,41 @@ class SearchResultItem(BaseModel):
 class SearchResponse(BaseModel):
     results: List[SearchResultItem] = Field(..., description="List of matched items sorted by relevance.")
 
+class SearchSourceItem(BaseModel):
+    id: int = Field(..., description="Internal surrogate ID of the item.")
+    title: Optional[str] = Field(None, description="Extracted or generated title.")
+    summary: str = Field(..., description="LLM-generated plain-text summary.")
+    relevance: float = Field(..., description="Relevance score (RRF or similarity).")
+
+class RAGSearchResponse(BaseModel):
+    answer: Optional[str] = Field(None, description="Synthesised answer generated from context, or null if skipped/failed.")
+    sources: List[SearchSourceItem] = Field(..., description="List of matched source items used for context.")
+    query: str = Field(..., description="The original search query.")
+
 # ---------------------------------------------------------------------------
 # Mind Map Graph schemas
 # ---------------------------------------------------------------------------
 class GraphNode(BaseModel):
-    id: str = Field(..., description="Node ID (e.g. 'item_12' or 'hub_5').")
-    type: str = Field(..., description="Node type: 'orbital', 'hub', or 'pulse'.")
-    label: str = Field(..., description="Node display label.")
-    x: Optional[float] = Field(None, description="Optional X coordinate for Mind Map layout.")
-    y: Optional[float] = Field(None, description="Optional Y coordinate for Mind Map layout.")
-    item_id: Optional[int] = Field(None, description="Direct item ID if this node represents a saved item.")
+    id: int = Field(..., description="Internal surrogate ID of the item.")
+    title: str = Field(..., description="Extracted or generated title of the item.")
+    source_type: str = Field(..., description="Type of ingest source.")
+    created_at: str = Field(..., description="Creation timestamp in ISO format.")
+    is_hub: bool = Field(..., description="True if the item is a member of any semantic hub.")
 
 class GraphEdge(BaseModel):
-    source: str = Field(..., description="Source node ID.")
-    target: str = Field(..., description="Target node ID.")
-    weight: float = Field(..., description="Edge weight representing similarity.")
+    source: int = Field(..., description="Source node item ID.")
+    target: int = Field(..., description="Target node item ID.")
+    weight: float = Field(..., description="Edge weight representing cosine similarity.")
+
+class GraphHub(BaseModel):
+    id: int = Field(..., description="Hub ID.")
+    label: str = Field(..., description="LLM-generated community label.")
+    member_ids: List[int] = Field(..., description="List of validated member item IDs in the hub.")
 
 class GraphResponse(BaseModel):
-    nodes: List[GraphNode] = Field(..., description="All items and semantic hub nodes.")
-    edges: List[GraphEdge] = Field(..., description="Connections between nodes representing similarity.")
+    nodes: List[GraphNode] = Field(..., description="List of item nodes.")
+    edges: List[GraphEdge] = Field(..., description="List of similarity edges.")
+    hubs: List[GraphHub] = Field(..., description="List of semantic hubs.")
 
 # ---------------------------------------------------------------------------
 # Quizzes schemas

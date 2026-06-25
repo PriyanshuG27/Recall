@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS items (
     title        VARCHAR(500),              -- Plaintext
     embedding    VECTOR(384),               -- MiniLM-L6-v2 output
     tags         TEXT[],                    -- Postgres native array
+    content_hash VARCHAR(16),               -- SHA256 first 16 chars for exact text deduplication
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
@@ -101,6 +102,10 @@ CREATE TABLE IF NOT EXISTS dead_letter_queue (
 CREATE INDEX IF NOT EXISTS idx_items_user
     ON items(user_id);
 
+-- B-Tree index for deduplication checks
+CREATE INDEX IF NOT EXISTS idx_items_content_hash
+    ON items(user_id, content_hash);
+
 -- HNSW index for sub-10 ms cosine similarity vector search
 CREATE INDEX IF NOT EXISTS idx_items_embedding
     ON items USING hnsw (embedding vector_cosine_ops)
@@ -113,3 +118,36 @@ CREATE INDEX IF NOT EXISTS idx_items_text_gin
 -- B-Tree index for reminders dispatcher polling
 CREATE INDEX IF NOT EXISTS idx_reminders_time_status
     ON reminders(remind_at, status);
+
+
+-- 11. ITEM CHUNKS TABLE (PDF Chunking & Multi-Chunk Embedding)
+CREATE TABLE IF NOT EXISTS item_chunks (
+    id          SERIAL PRIMARY KEY,
+    item_id     INT NOT NULL,              -- References items(id), not FK due to partitioning composite PK
+    user_id     INT REFERENCES users(id) ON DELETE CASCADE,
+    chunk_index INT NOT NULL,
+    chunk_text  TEXT NOT NULL,             -- Plaintext (excerpt for search, max 500 chars)
+    embedding   VECTOR(384),               -- MiniLM-L6-v2 output
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_item 
+    ON item_chunks(item_id);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding 
+    ON item_chunks USING hnsw (embedding vector_cosine_ops)
+    WITH (m=16, ef_construction=64);
+
+-- Trigger to cascade deletes from items to item_chunks (needed since we cannot use a simple FK due to partitioning composite PK)
+CREATE OR REPLACE FUNCTION cascade_delete_item_chunks()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM item_chunks WHERE item_id = OLD.id;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trigger_cascade_delete_item_chunks
+BEFORE DELETE ON items
+FOR EACH ROW
+EXECUTE FUNCTION cascade_delete_item_chunks();

@@ -198,3 +198,16 @@ docs/generate_prompts_html.py
 # Agent Workspace Directories
 brain/
 convo_history/
+
+# Local task, planning, and verification files
+walkthrough.md
+implementation_plan.md
+manual_verification_suite.md
+task.md
+.coveragerc
+fastapi_flow.png
+fastapi_guide.pdf
+
+# Local test data and helper generation scripts
+test_data/
+scripts/

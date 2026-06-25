@@ -34,26 +34,38 @@ class MockDbState:
         
         # Pre-seed items
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+        from backend.services.encryption import encrypt
         self.items = [
             {
                 "id": 10,
                 "user_id": 1,
                 "source_type": "url",
                 "title": "Article 1",
+                "source_url": "https://google.com",
                 "created_at": now - timedelta(hours=2)
             },
             {
                 "id": 11,
                 "user_id": 1,
                 "source_type": "voice",
-                "title": None,
+                "title": "Voice note",
+                "source_url": "mock_voice_file_id",
                 "created_at": now - timedelta(days=1)
+            },
+            {
+                "id": 12,
+                "user_id": 1,
+                "source_type": "text",
+                "title": "Text note",
+                "raw_text": encrypt("Hello Recall Note"),
+                "created_at": now - timedelta(hours=3)
             },
             {
                 "id": 20,
                 "user_id": 2,
                 "source_type": "url",
                 "title": "Other User Article",
+                "source_url": "https://other.com",
                 "created_at": now - timedelta(minutes=5)
             }
         ]
@@ -107,6 +119,19 @@ class StatefulMockCursor:
             user_items = [item for item in self.state.items if item["user_id"] == u_id]
             user_items.sort(key=lambda x: x["created_at"], reverse=True)
             self._rows = [(item["id"], item["title"], item["source_type"], item["created_at"]) for item in user_items]
+            
+        elif "SELECT SOURCE_TYPE, SOURCE_URL, RAW_TEXT, TITLE FROM ITEMS" in query_upper:
+            item_id = params[0]
+            u_id = params[1]
+            found = [item for item in self.state.items if item["id"] == item_id and item["user_id"] == u_id]
+            if found:
+                item = found[0]
+                self._rows = [(
+                    item["source_type"],
+                    item.get("source_url"),
+                    item.get("raw_text"),
+                    item.get("title")
+                )]
             
         elif "DELETE FROM ITEMS" in query_upper:
             item_id = params[0]
@@ -164,7 +189,7 @@ def db_state():
     return MockDbState()
 
 @pytest.fixture(autouse=True)
-def override_db(db_state):
+def override_db(patch_env, db_state):
     from backend.db.connection import get_db
     
     async def _mock_get_db():
@@ -228,8 +253,8 @@ def test_command_list(client, mock_telegram_ack):
     assert "📋 Your last 10 saves:" in args[1]
     assert "Article 1" in args[1]
     assert "Voice note" in args[1]
-    assert "(ID: 10)" in args[1]
-    assert "(ID: 11)" in args[1]
+    assert "/file_10" in args[1]
+    assert "/file_11" in args[1]
 
 def test_command_delete_success(client, db_state, mock_telegram_ack):
     # User 1 deletes item 10
@@ -277,9 +302,10 @@ def test_command_stats(client, mock_telegram_ack):
     args = mock_telegram_ack.call_args[0]
     assert args[0] == "12345"
     assert "📊 Your Recall stats:" in args[1]
-    assert "Total saves: 2" in args[1]
+    assert "Total saves: 3" in args[1]
     assert "Links: 1" in args[1]
     assert "Voice: 1" in args[1]
+    assert "Texts: 1" in args[1]
     assert "Quizzes answered: 2" in args[1]
     assert "Current streak: 🔥 5 days" in args[1]
 
@@ -290,3 +316,50 @@ def test_command_unknown(client, mock_telegram_ack):
     assert response.json()["detail"] == "unknown_command_sent"
     
     mock_telegram_ack.assert_called_once_with("12345", "Unknown command. Type /help to see all commands.")
+
+# --- /FILE COMMAND TESTS ---
+
+def test_command_file_missing_arg(client, mock_telegram_ack):
+    payload = make_telegram_update(2009, 12345, "/file")
+    response = client.post("/webhook", json=payload)
+    assert response.status_code == 200
+    assert response.json()["detail"] == "file_processed"
+    mock_telegram_ack.assert_called_once_with("12345", "Please provide an item ID: /file 42")
+
+def test_command_file_invalid_arg(client, mock_telegram_ack):
+    payload = make_telegram_update(2010, 12345, "/file abc")
+    response = client.post("/webhook", json=payload)
+    assert response.status_code == 200
+    assert response.json()["detail"] == "file_processed"
+    mock_telegram_ack.assert_called_once_with("12345", "Please provide a valid item ID: /file 42")
+
+def test_command_file_not_found(client, mock_telegram_ack):
+    payload = make_telegram_update(2011, 12345, "/file 999")
+    response = client.post("/webhook", json=payload)
+    assert response.status_code == 200
+    assert response.json()["detail"] == "file_processed"
+    mock_telegram_ack.assert_called_once_with("12345", "Item not found.")
+
+def test_command_file_voice_success(client, mock_telegram_ack):
+    # Mock send_telegram_media inside webhook
+    with mock.patch("backend.routes.webhook.send_telegram_media") as mock_media:
+        payload = make_telegram_update(2012, 12345, "/file 11")
+        response = client.post("/webhook", json=payload)
+        assert response.status_code == 200
+        assert response.json()["detail"] == "file_processed"
+        mock_media.assert_called_once_with("12345", "voice", "mock_voice_file_id", "Voice note")
+
+def test_command_file_note_success(client, mock_telegram_ack):
+    payload = make_telegram_update(2013, 12345, "/file 12")
+    response = client.post("/webhook", json=payload)
+    assert response.status_code == 200
+    assert response.json()["detail"] == "file_processed"
+    mock_telegram_ack.assert_called_once_with("12345", "📝 Saved Note:\nHello Recall Note")
+
+def test_command_file_clickable_link(client, mock_telegram_ack):
+    # Tests clicking a /file_12 command link
+    payload = make_telegram_update(2014, 12345, "/file_12")
+    response = client.post("/webhook", json=payload)
+    assert response.status_code == 200
+    assert response.json()["detail"] == "file_processed"
+    mock_telegram_ack.assert_called_once_with("12345", "📝 Saved Note:\nHello Recall Note")

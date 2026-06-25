@@ -236,7 +236,8 @@ async def test_concurrent_duplicates(db_state, mock_redis_push, mock_telegram_ac
          mock.patch("backend.db.connection.close_pool", return_value=None):
          
         # Use httpx.AsyncClient to execute requests concurrently
-        async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
             tasks = [
                 ac.post("/webhook", json=payload),
                 ac.post("/webhook", json=payload),
@@ -278,11 +279,14 @@ def test_content_type_ack_mapping(client, mock_redis_push, mock_telegram_ack, me
     response = client.post("/webhook", json=payload)
     assert response.status_code == 200
     
-    # Verify task content type in Redis push
-    assert mock_redis_push.call_count == 1
-    call_args = mock_redis_push.call_args[0][0]
-    task_payload = json.loads(call_args[2])
-    assert task_payload["content_type"] == expected_type
+    # Verify task content type in Redis push (only if supported)
+    if expected_type == "unsupported":
+        assert mock_redis_push.call_count == 0
+    else:
+        assert mock_redis_push.call_count == 1
+        call_args = mock_redis_push.call_args[0][0]
+        task_payload = json.loads(call_args[2])
+        assert task_payload["content_type"] == expected_type
     
     # Verify Telegram ACK string
     assert mock_telegram_ack.call_count == 1

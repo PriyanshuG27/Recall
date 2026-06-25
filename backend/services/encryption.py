@@ -32,11 +32,20 @@ from cryptography.fernet import Fernet, InvalidToken
 logger = logging.getLogger(__name__)
 
 
+_fernet_cached: Optional[Fernet] = None
+
 def _get_fernet() -> Fernet:
     """
     Returns a Fernet instance initialised with the key from settings.
     Imports Settings fresh each call so unit-test monkeypatching works correctly.
+    Caches the cipher outside of test environments to optimize performance.
     """
+    global _fernet_cached
+    import sys
+    
+    if _fernet_cached is not None and "pytest" not in sys.modules:
+        return _fernet_cached
+        
     import importlib
     import backend.config as _cfg_module
     importlib.reload(_cfg_module)
@@ -47,7 +56,9 @@ def _get_fernet() -> Fernet:
             "Settings failed to load — cannot initialise Fernet cipher. "
             "Ensure all required environment variables are set."
         )
-    return Fernet(settings.FERNET_KEY.encode())
+    cipher = Fernet(settings.FERNET_KEY.encode())
+    _fernet_cached = cipher
+    return cipher
 
 
 # ---------------------------------------------------------------------------

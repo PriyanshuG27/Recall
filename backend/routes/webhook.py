@@ -41,18 +41,24 @@ def detect_content_type(message: dict) -> Tuple[str, Optional[str], Optional[str
     Detects the content type of a Telegram message and extracts necessary content.
     Returns (content_type, text_content, file_id).
     """
-    # 1. Voice
+    # 1. Voice & Audio
     if "voice" in message:
         file_id = message["voice"].get("file_id")
         return "voice", None, file_id
         
-    # 2. PDF (document with PDF extension or PDF mime-type)
+    if "audio" in message:
+        file_id = message["audio"].get("file_id")
+        return "voice", None, file_id
+        
+    # 2. PDF & Audio Documents
     if "document" in message:
         doc = message["document"]
         mime_type = doc.get("mime_type") or ""
         file_name = doc.get("file_name") or ""
         if "pdf" in mime_type.lower() or file_name.lower().endswith(".pdf"):
             return "pdf", None, doc.get("file_id")
+        elif "audio/" in mime_type.lower() or file_name.lower().endswith((".mp3", ".m4a", ".wav", ".aac", ".ogg", ".opus", ".flac")):
+            return "voice", None, doc.get("file_id")
             
     # 3. Photo (extract largest size)
     if "photo" in message:
@@ -85,7 +91,7 @@ def detect_content_type(message: dict) -> Tuple[str, Optional[str], Optional[str
 # ---------------------------------------------------------------------------
 # Global HTTP Client Session for Connection Pooling
 # ---------------------------------------------------------------------------
-http_client = httpx.AsyncClient(timeout=5.0)
+http_client = httpx.AsyncClient(timeout=15.0)
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +126,35 @@ async def send_telegram_ack(chat_id: str, ack_message: str):
         logger.info("Telegram ACK successfully sent to chat_id %s: '%s'", chat_id, ack_message)
     except Exception as e:
         logger.error("Failed to send Telegram ACK to chat_id %s: %s", chat_id, e)
+
+
+async def send_telegram_media(chat_id: str, source_type: str, file_id: str, caption: Optional[str] = None):
+    """Sends a stored file back to the Telegram chat using its file_id."""
+    bot_token = settings.TELEGRAM_BOT_TOKEN
+    method = "sendDocument"
+    param_name = "document"
+    
+    if source_type == "voice":
+        method = "sendVoice"
+        param_name = "voice"
+    elif source_type in ("photo", "image"):
+        method = "sendPhoto"
+        param_name = "photo"
+        
+    url = f"https://api.telegram.org/bot{bot_token}/{method}"
+    payload = {
+        "chat_id": chat_id,
+        param_name: file_id
+    }
+    if caption:
+        payload["caption"] = caption
+        
+    try:
+        resp = await http_client.post(url, json=payload)
+        resp.raise_for_status()
+        logger.info("Successfully sent %s media to chat_id %s using file_id %s", source_type, chat_id, file_id)
+    except Exception as e:
+        logger.error("Failed to send %s media to chat_id %s: %s", source_type, chat_id, e)
 
 
 
@@ -181,6 +216,14 @@ async def telegram_webhook(
             command_part = parts[0].split("@")[0].lower()  # Handle bot username suffix
             args = parts[1].strip() if len(parts) > 1 else ""
             
+            # Map clickable /file_123 or /get_123 to command_part="/file" and args="123"
+            if command_part.startswith("/file_"):
+                args = command_part.replace("/file_", "")
+                command_part = "/file"
+            elif command_part.startswith("/get_"):
+                args = command_part.replace("/get_", "")
+                command_part = "/file"
+            
             if command_part == "/start":
                 welcome_msg = "Welcome to Recall! Forward me any link, voice note, PDF, or image and I'll remember it for you."
                 background_tasks.add_task(send_telegram_ack, chat_id, welcome_msg)
@@ -193,17 +236,136 @@ async def telegram_webhook(
                     "/start — Set up your account\n"
                     "/search <query> — Find saved items\n"
                     "/list — Show your last 10 saves\n"
+                    "/file <id> — Retrieve a saved file, link, or note by ID\n"
                     "/delete <id> — Delete an item by ID\n"
                     "/quiz — Get a due quiz question\n"
                     "/remind <time> <message> — Set a reminder (e.g. /remind 2h Review ML notes)\n"
                     "/stats — Your knowledge stats\n"
                     "/streak — Current save streak\n"
-                    "/connect_drive — Connect Google Drive backup"
+                    "/connect_drive — Connect Google Drive backup\n"
+                    "/tags — Show your top tags"
                 )
                 background_tasks.add_task(send_telegram_ack, chat_id, help_msg)
                 logger.info("Processed /help for chat_id %s", chat_id)
                 return {"status": "ok", "detail": "help_sent"}
+
+            elif command_part == "/tags":
+                async with db.cursor() as cur:
+                    await cur.execute(
+                        """
+                        SELECT DISTINCT unnest(tags) AS tag, COUNT(*) AS count
+                        FROM items
+                        WHERE user_id = %s
+                        GROUP BY tag
+                        ORDER BY count DESC
+                        LIMIT 10;
+                        """,
+                        (user_id,)
+                    )
+                    rows = await cur.fetchall()
+
+                if not rows:
+                    tags_msg = "🏷 Your top tags:\nYou haven't saved any items with tags yet."
+                else:
+                    lines = ["🏷 Your top tags:"]
+                    for idx, (tag, count) in enumerate(rows, 1):
+                        lines.append(f"{idx}. {tag} ({count})")
+                    tags_msg = "\n".join(lines)
+
+                background_tasks.add_task(send_telegram_ack, chat_id, tags_msg)
+                logger.info("Processed /tags command for chat_id %s, returned %d tags", chat_id, len(rows))
+                return {"status": "ok", "detail": "tags_processed"}
                 
+            elif command_part in ("/file", "/get"):
+                if not args:
+                    file_msg = "Please provide an item ID: /file 42"
+                    background_tasks.add_task(send_telegram_ack, chat_id, file_msg)
+                else:
+                    try:
+                        item_id = int(args)
+                        async with db.cursor() as cur:
+                            await cur.execute(
+                                "SELECT source_type, source_url, raw_text, title FROM items WHERE id = %s AND user_id = %s;",
+                                (item_id, user_id)
+                            )
+                            row = await cur.fetchone()
+                            
+                        if not row:
+                            file_msg = "Item not found."
+                            background_tasks.add_task(send_telegram_ack, chat_id, file_msg)
+                        else:
+                            source_type, source_url, raw_text, title = row
+                            if source_type in ("pdf", "voice", "photo", "image"):
+                                if source_url:
+                                    # Send the file back using its stored file_id
+                                    caption = title or f"{source_type.capitalize()} file"
+                                    background_tasks.add_task(send_telegram_media, chat_id, source_type, source_url, caption)
+                                else:
+                                    file_msg = f"This {source_type} item does not have a saved Telegram file ID."
+                                    background_tasks.add_task(send_telegram_ack, chat_id, file_msg)
+                            elif source_type == "url":
+                                file_msg = f"🔗 Here is the link you saved:\n{source_url}"
+                                background_tasks.add_task(send_telegram_ack, chat_id, file_msg)
+                            else:
+                                # Decrypt raw text for notes
+                                from backend.services.encryption import decrypt
+                                try:
+                                    decrypted = decrypt(raw_text)
+                                except Exception:
+                                    decrypted = raw_text
+                                file_msg = f"📝 Saved Note:\n{decrypted}"
+                                background_tasks.add_task(send_telegram_ack, chat_id, file_msg)
+                    except ValueError:
+                        file_msg = "Please provide a valid item ID: /file 42"
+                        background_tasks.add_task(send_telegram_ack, chat_id, file_msg)
+                return {"status": "ok", "detail": "file_processed"}
+                
+            elif command_part == "/search":
+                if not args:
+                    search_msg = "Please provide a search query: /search machine learning"
+                else:
+                    from backend.services.search_service import hybrid_search
+                    results = await hybrid_search(args, user_id, db)
+                    if not results:
+                        search_msg = f"🔍 No results found for \"{args}\"."
+                    else:
+                        # Limit to top-5 results
+                        results_limited = results[:5]
+                        
+                        # Generate synthesised RAG answer if results count >= 3
+                        answer = None
+                        if len(results_limited) >= 3:
+                            from backend.services.ai_cascade import AICascade
+                            cascade = AICascade()
+                            try:
+                                summaries = [r["summary"] or "" for r in results_limited]
+                                answer = await cascade.answer_question(args, summaries)
+                            except Exception as e:
+                                logger.error("RAG answer generation in bot /search failed: %s", e)
+                                answer = None
+                        
+                        lines = [f"🔍 Query: {args}"]
+                        if answer:
+                            lines.append(f"💡 {answer}")
+                        lines.append("")
+                        lines.append("Sources:")
+                        for idx, item in enumerate(results_limited, 1):
+                            source_type = item["source_type"]
+                            title = item["title"]
+                            display_title = title or (
+                                "Voice note" if source_type == "voice"
+                                else "PDF" if source_type == "pdf"
+                                else "Image" if source_type in ("photo", "image")
+                                else "Link" if source_type == "url"
+                                else "Text"
+                            )
+                            lines.append(f"{idx}. [{source_type}] {display_title} — /file_{item['id']}")
+                        search_msg = "\n".join(lines)
+                        
+                background_tasks.add_task(send_telegram_ack, chat_id, search_msg)
+                logger.info("Processed /search %s for chat_id %s", args, chat_id)
+                return {"status": "ok", "detail": "search_processed"}
+
             elif command_part == "/list":
                 async with db.cursor() as cur:
                     await cur.execute(
@@ -252,7 +414,7 @@ async def telegram_webhook(
                             days = diff.days
                             rel_time = f"{days} days ago"
                             
-                        lines.append(f"{idx}. [{source_type}] {display_title} (ID: {item_id}) ({rel_time})")
+                        lines.append(f"{idx}. [{source_type}] {display_title} ({rel_time}) — /file_{item_id}")
                     list_msg = "\n".join(lines)
                     
                 background_tasks.add_task(send_telegram_ack, chat_id, list_msg)
@@ -266,6 +428,14 @@ async def telegram_webhook(
                     try:
                         item_id = int(args)
                         async with db.cursor() as cur:
+                            await cur.execute(
+                                "DELETE FROM quizzes WHERE item_id = %s AND user_id = %s;",
+                                (item_id, user_id)
+                            )
+                            await cur.execute(
+                                "DELETE FROM item_chunks WHERE item_id = %s AND user_id = %s;",
+                                (item_id, user_id)
+                            )
                             await cur.execute(
                                 "DELETE FROM items WHERE id = %s AND user_id = %s;",
                                 (item_id, user_id)
@@ -355,27 +525,33 @@ async def telegram_webhook(
         content_type, text_content, file_id = detect_content_type(message)
         logger.info("Detected message content type '%s' for update_id=%s.", content_type, update_id_str)
         
-        # 6. Push task JSON to Upstash Redis queue (LPUSH recall:tasks)
-        task = {
-            "update_id": update_id_str,
-            "chat_id": chat_id,
-            "content_type": content_type
-        }
-        if content_type in ("text", "url"):
-            task["text"] = text_content
-        elif content_type in ("voice", "pdf", "photo"):
-            task["file_id"] = file_id
-            
-        # 7. Enqueue Redis push + Telegram ACK both in background so we return 200 instantly
-        command = ["LPUSH", "recall:tasks", json.dumps(task)]
+        # 6. Dispatch immediate Telegram ACK
         ack_message = ACK_MESSAGES.get(content_type, ACK_MESSAGES["unsupported"])
-
-        background_tasks.add_task(run_upstash_command, command)
         background_tasks.add_task(send_telegram_ack, chat_id, ack_message)
-        logger.info(
-            "Queued background tasks (Redis push + Telegram ACK) for update_id=%s, chat_id=%s, type=%s",
-            update_id_str, chat_id, content_type
-        )
+        
+        # 7. Push task JSON to Upstash Redis queue (LPUSH recall:tasks) ONLY if supported
+        if content_type != "unsupported":
+            task = {
+                "update_id": update_id_str,
+                "chat_id": chat_id,
+                "content_type": content_type
+            }
+            if content_type in ("text", "url"):
+                task["text"] = text_content
+            elif content_type in ("voice", "pdf", "photo"):
+                task["file_id"] = file_id
+                
+            command = ["LPUSH", "recall:tasks", json.dumps(task)]
+            background_tasks.add_task(run_upstash_command, command)
+            logger.info(
+                "Queued background task (Redis push) for update_id=%s, chat_id=%s, type=%s",
+                update_id_str, chat_id, content_type
+            )
+        else:
+            logger.info(
+                "Skipped Redis queue push for unsupported content type on update_id=%s, chat_id=%s",
+                update_id_str, chat_id
+            )
         
     except RateLimitExceeded as e:
         logger.warning(

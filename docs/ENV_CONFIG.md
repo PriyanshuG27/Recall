@@ -26,6 +26,7 @@
 | `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 client secret | Google Cloud Console -> Credentials | Yes (Drive) | — |
 | `GOOGLE_REDIRECT_URI` | OAuth callback URL registered in Google Cloud Console | Set to `https://<render-url>/auth/google/callback` | Yes (Drive) | Must match exactly what is in GCP |
 | `COMPUTE_PROVIDER` | Override cascade tier for testing (e.g. `groq`, `gemini`, `modal`) | — | Optional | Development / CI only |
+| `HF_TOKEN` | Hugging Face Access Token to prevent anonymous rate-limiting | huggingface.co -> Settings -> Access Tokens | Optional | Highly recommended for production stability |
 
 ---
 
@@ -54,10 +55,10 @@
 
 | Service | Count |
 |---------|-------|
-| Render (backend) | 15 |
+| Render (backend) | 16 |
 | Vercel (frontend) | 2 |
 | Optional scraping | 3 |
-| **Total** | **20** |
+| **Total** | **21** |
 
 ---
 

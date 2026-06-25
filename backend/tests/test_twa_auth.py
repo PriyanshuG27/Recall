@@ -169,7 +169,7 @@ def test_twa_invalid_hash(client, mock_db_conn):
         headers={"Authorization": f"TelegramInitData {init_data}"}
     )
     assert response.status_code == 401
-    assert "Invalid hash" in response.json().get("detail", "")
+    assert "Not authenticated" in response.json().get("detail", "")
 
 
 def test_twa_expired_auth_date(client, mock_db_conn):
@@ -184,7 +184,7 @@ def test_twa_expired_auth_date(client, mock_db_conn):
         headers={"Authorization": f"TelegramInitData {init_data}"}
     )
     assert response.status_code == 401
-    assert "Expired auth_date" in response.json().get("detail", "")
+    assert "Not authenticated" in response.json().get("detail", "")
 
 
 def test_twa_missing_hash_field(client, mock_db_conn):
@@ -199,7 +199,7 @@ def test_twa_missing_hash_field(client, mock_db_conn):
         headers={"Authorization": f"TelegramInitData {init_data}"}
     )
     assert response.status_code == 401
-    assert "Missing hash" in response.json().get("detail", "")
+    assert "Not authenticated" in response.json().get("detail", "")
 
 
 def test_twa_user_not_found(client, mock_db_conn):
@@ -215,7 +215,7 @@ def test_twa_user_not_found(client, mock_db_conn):
         headers={"Authorization": f"TelegramInitData {init_data}"}
     )
     assert response.status_code == 401
-    assert "User not found" in response.json().get("detail", "")
+    assert "Not authenticated" in response.json().get("detail", "")
 
 
 # ---------------------------------------------------------------------------
@@ -223,38 +223,38 @@ def test_twa_user_not_found(client, mock_db_conn):
 # ---------------------------------------------------------------------------
 def test_jwt_valid_cookie(client, mock_db_conn):
     """Valid JWT cookie -> 200 with user context attached."""
-    payload = {"sub": 42, "chat_id": "12345", "exp": int(time.time()) + 3600}
+    payload = {"sub": "42", "chat_id": "12345", "exp": int(time.time()) + 3600}
     token = generate_jwt(payload, settings.JWT_SECRET)
     
     mock_db_conn.cursor().result = (42, "12345")
     
-    response = client.get("/test-auth/jwt", cookies={"jwt": token})
+    response = client.get("/test-auth/jwt", headers={"Cookie": f"jwt={token}"})
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "user_id": 42, "chat_id": "12345"}
 
 
 def test_jwt_expired_cookie(client, mock_db_conn):
     """Expired JWT cookie -> 401."""
-    payload = {"sub": 42, "chat_id": "12345", "exp": int(time.time()) - 10}
+    payload = {"sub": "42", "chat_id": "12345", "exp": int(time.time()) - 10}
     token = generate_jwt(payload, settings.JWT_SECRET)
     
     mock_db_conn.cursor().result = (42, "12345")
     
-    response = client.get("/test-auth/jwt", cookies={"jwt": token})
+    response = client.get("/test-auth/jwt", headers={"Cookie": f"jwt={token}"})
     assert response.status_code == 401
-    assert "JWT token expired" in response.json().get("detail", "")
+    assert "Not authenticated" in response.json().get("detail", "")
 
 
 def test_jwt_invalid_signature(client, mock_db_conn):
     """JWT cookie with invalid signature -> 401."""
-    payload = {"sub": 42, "chat_id": "12345", "exp": int(time.time()) + 3600}
+    payload = {"sub": "42", "chat_id": "12345", "exp": int(time.time()) + 3600}
     token = generate_jwt(payload, "wrong_secret_12345678901234567890123456")
     
     mock_db_conn.cursor().result = (42, "12345")
     
-    response = client.get("/test-auth/jwt", cookies={"jwt": token})
+    response = client.get("/test-auth/jwt", headers={"Cookie": f"jwt={token}"})
     assert response.status_code == 401
-    assert "verification failed" in response.json().get("detail", "")
+    assert "Not authenticated" in response.json().get("detail", "")
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +263,7 @@ def test_jwt_invalid_signature(client, mock_db_conn):
 def test_unified_jwt_takes_precedence_and_succeeds(client, mock_db_conn):
     """Unified auth: Valid JWT cookie succeeds, TWA header ignored."""
     # Generate valid JWT
-    payload = {"sub": 42, "chat_id": "12345", "exp": int(time.time()) + 3600}
+    payload = {"sub": "42", "chat_id": "12345", "exp": int(time.time()) + 3600}
     token = generate_jwt(payload, settings.JWT_SECRET)
     
     # Generate an expired/invalid TWA header to ensure it's not even evaluated
@@ -273,8 +273,10 @@ def test_unified_jwt_takes_precedence_and_succeeds(client, mock_db_conn):
     
     response = client.get(
         "/test-auth/current",
-        cookies={"jwt": token},
-        headers={"Authorization": f"TelegramInitData {init_data}"}
+        headers={
+            "Cookie": f"jwt={token}",
+            "Authorization": f"TelegramInitData {init_data}"
+        }
     )
     assert response.status_code == 200
     assert response.json()["user_id"] == 42
@@ -283,7 +285,7 @@ def test_unified_jwt_takes_precedence_and_succeeds(client, mock_db_conn):
 def test_unified_jwt_fails_immediately(client, mock_db_conn):
     """Unified auth: Invalid JWT cookie fails immediately, TWA header ignored (no double auth)."""
     # Generate expired JWT
-    payload = {"sub": 42, "chat_id": "12345", "exp": int(time.time()) - 10}
+    payload = {"sub": "42", "chat_id": "12345", "exp": int(time.time()) - 10}
     token = generate_jwt(payload, settings.JWT_SECRET)
     
     # Generate valid TWA initData
@@ -294,12 +296,14 @@ def test_unified_jwt_fails_immediately(client, mock_db_conn):
     
     response = client.get(
         "/test-auth/current",
-        cookies={"jwt": token},
-        headers={"Authorization": f"TelegramInitData {init_data}"}
+        headers={
+            "Cookie": f"jwt={token}",
+            "Authorization": f"TelegramInitData {init_data}"
+        }
     )
     # Must fail because JWT cookie was present but invalid (no fallback to TWA)
     assert response.status_code == 401
-    assert "JWT token expired" in response.json().get("detail", "")
+    assert "Not authenticated" in response.json().get("detail", "")
 
 
 def test_unified_fallback_to_twa_succeeds(client, mock_db_conn):
@@ -329,7 +333,7 @@ def test_unified_fallback_to_twa_fails(client, mock_db_conn):
         headers={"Authorization": f"TelegramInitData {init_data}"}
     )
     assert response.status_code == 401
-    assert "Invalid hash" in response.json().get("detail", "")
+    assert "Not authenticated" in response.json().get("detail", "")
 
 
 def test_unified_missing_both_fails(client):

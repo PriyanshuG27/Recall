@@ -48,15 +48,20 @@ async def open_pool() -> None:
             "Neon requires ?sslmode=require for encrypted connections."
         )
 
+    async def check_conn(conn) -> None:
+        await conn.execute("SELECT 1;")
+
     _pool = AsyncConnectionPool(
         conninfo=settings.DATABASE_URL,
-        min_size=1,
+        min_size=0,
         max_size=5,
         timeout=5.0,          # seconds to wait for a connection from the pool
+        max_idle=240.0,       # close idle connections before Neon drops them (5m)
+        check=check_conn,     # Validate connection health on checkout
         open=False,            # we open manually below
     )
     await _pool.open()
-    logger.info("Database connection pool opened (min=1, max=5).")
+    logger.info("Database connection pool opened (min=0, max=5, max_idle=240s).")
 
 
 async def close_pool() -> None:

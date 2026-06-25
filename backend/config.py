@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
     COMPUTE_PROVIDER: str | None = None
+    INTERNAL_API_KEY: str | None = "dev_internal_api_key"
     
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_CLIENT_SECRET: str | None = None
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
     ZENROWS_KEY: str | None = None
     SCRAPINGBEE_KEY: str | None = None
     SCRAPERAPI_KEY: str | None = None
+    HF_TOKEN: str | None = None
 
     ENV: str = "development"
 
@@ -103,6 +105,9 @@ class Settings(BaseSettings):
 # Central settings singleton
 try:
     settings = Settings()
+    if settings and settings.HF_TOKEN:
+        import os
+        os.environ["HF_TOKEN"] = settings.HF_TOKEN
 except Exception as e:
     # Fail fast on startup if settings are missing or misconfigured
     print(f"CRITICAL CONFIGURATION ERROR on startup: {e}")

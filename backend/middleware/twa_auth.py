@@ -5,6 +5,7 @@ import json
 import time
 import urllib.parse
 from typing import Optional
+import jwt  # PyJWT
 
 from fastapi import Depends, HTTPException, Request, Response
 from pydantic import BaseModel
@@ -21,71 +22,30 @@ class UserContext(BaseModel):
     telegram_chat_id: str
 
 
-# ---------------------------------------------------------------------------
-# Base64url Helpers (Zero-dependency)
-# ---------------------------------------------------------------------------
-def base64url_decode(s: str) -> bytes:
-    """Decode base64url-encoded string with padding correction."""
-    padding = '=' * (4 - (len(s) % 4))
-    return base64.urlsafe_b64decode(s + padding)
-
-
-def base64url_encode(data: bytes) -> str:
-    """Encode bytes to base64url string without padding."""
-    return base64.urlsafe_b64encode(data).rstrip(b'=').decode('ascii')
+class CookieDict(dict):
+    def items(self):
+        return [
+            ("Set-Cookie", "recall_session=; Max-Age=0; Path=/; SameSite=lax; HttpOnly; Secure"),
+            ("Set-Cookie", "jwt=; Max-Age=0; Path=/; SameSite=lax; HttpOnly; Secure")
+        ]
 
 
 # ---------------------------------------------------------------------------
-# JWT Helpers (Zero-dependency HS256)
+# JWT Helpers (using PyJWT)
 # ---------------------------------------------------------------------------
 def verify_jwt(token: str, secret: str) -> dict:
-    """Verify and decode a JWT using standard library HS256 algorithm."""
-    parts = token.split('.')
-    if len(parts) != 3:
-        raise ValueError("Invalid JWT format: must have 3 parts")
-    header_segment, payload_segment, signature_segment = parts
-    
-    # Verify signature
-    signing_input = f"{header_segment}.{payload_segment}".encode('utf-8')
-    expected_signature_bytes = hmac.new(
-        secret.encode('utf-8'), 
-        signing_input, 
-        hashlib.sha256
-    ).digest()
-    expected_signature = base64url_encode(expected_signature_bytes)
-    
-    if not hmac.compare_digest(signature_segment, expected_signature):
-        raise ValueError("JWT signature verification failed")
-        
-    # Decode and parse payload
+    """Verify and decode a JWT using PyJWT HS256."""
     try:
-        payload_bytes = base64url_decode(payload_segment)
-        payload = json.loads(payload_bytes.decode('utf-8'))
-    except Exception as e:
-        raise ValueError(f"Failed to parse JWT payload: {e}")
-        
-    # Validate expiry (exp)
-    exp = payload.get('exp')
-    if exp is not None:
-        if time.time() > exp:
-            raise ValueError("JWT token expired")
-            
-    return payload
+        return jwt.decode(token, secret, algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise ValueError(str(e))
+
+
 
 
 def generate_jwt(payload: dict, secret: str) -> str:
-    """Generate a signed JWT using standard library HS256 algorithm."""
-    header = {"alg": "HS256", "typ": "JWT"}
-    header_segment = base64url_encode(json.dumps(header).encode('utf-8'))
-    payload_segment = base64url_encode(json.dumps(payload).encode('utf-8'))
-    signing_input = f"{header_segment}.{payload_segment}".encode('utf-8')
-    signature_bytes = hmac.new(
-        secret.encode('utf-8'), 
-        signing_input, 
-        hashlib.sha256
-    ).digest()
-    signature_segment = base64url_encode(signature_bytes)
-    return f"{header_segment}.{payload_segment}.{signature_segment}"
+    """Generate a signed JWT using PyJWT HS256."""
+    return jwt.encode(payload, secret, algorithm="HS256")
 
 
 # ---------------------------------------------------------------------------
@@ -163,15 +123,18 @@ async def get_twa_user(
     """FastAPI dependency for verifying Telegram Web App initData in Authorization header."""
     auth_header = request.headers.get("Authorization")
     if not auth_header:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
+        raise HTTPException(status_code=401, detail="Not authenticated")
         
     if not auth_header.startswith("TelegramInitData "):
-        raise HTTPException(status_code=401, detail="Invalid Authorization header format")
+        raise HTTPException(status_code=401, detail="Not authenticated")
         
     init_data_raw = auth_header[len("TelegramInitData "):]
     
     # Verify HMAC
-    telegram_user_id = verify_twa_init_data(init_data_raw, settings.TELEGRAM_BOT_TOKEN)
+    try:
+        telegram_user_id = verify_twa_init_data(init_data_raw, settings.TELEGRAM_BOT_TOKEN)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     
     # Query database for user
     async with db.cursor() as cur:
@@ -182,7 +145,7 @@ async def get_twa_user(
         row = await cur.fetchone()
         
     if not row:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=401, detail="Not authenticated")
         
     return UserContext(id=row[0], telegram_chat_id=row[1])
 
@@ -195,16 +158,16 @@ async def get_jwt_user(
     """FastAPI dependency for verifying JWT stored in 'recall_session' or 'jwt' cookie."""
     token = request.cookies.get("recall_session") or request.cookies.get("jwt")
     if not token:
-        raise HTTPException(status_code=401, detail="Missing JWT cookie")
+        raise HTTPException(status_code=401, detail="Not authenticated")
         
     try:
         payload = verify_jwt(token, settings.JWT_SECRET)
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid JWT: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Not authenticated", headers=CookieDict())
         
     user_id = payload.get("sub")
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid JWT payload: missing sub")
+        raise HTTPException(status_code=401, detail="Not authenticated", headers=CookieDict())
         
     async with db.cursor() as cur:
         await cur.execute(
@@ -214,7 +177,7 @@ async def get_jwt_user(
         row = await cur.fetchone()
         
     if not row:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=401, detail="Not authenticated", headers=CookieDict())
         
     # Auto-refresh JWT if < 1 day (86400 seconds) remaining
     exp = payload.get("exp")

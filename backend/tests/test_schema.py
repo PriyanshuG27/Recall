@@ -12,6 +12,7 @@ from backend.models.schemas import (
     SearchResponse,
     GraphNode,
     GraphEdge,
+    GraphHub,
     GraphResponse,
     QuizResponse,
     QuizAnswerRequest,
@@ -56,16 +57,21 @@ def test_pydantic_schemas_validation():
     # 3. GraphResponse
     graph_data = {
         "nodes": [
-            {"id": "item_1", "type": "orbital", "label": "Item 1", "item_id": 1},
-            {"id": "hub_1", "type": "hub", "label": "Tech Hub"}
+            {"id": 1, "title": "Item 1", "source_type": "url", "created_at": "2026-06-25T00:00:00Z", "is_hub": True},
+            {"id": 2, "title": "Item 2", "source_type": "pdf", "created_at": "2026-06-25T01:00:00Z", "is_hub": False}
         ],
         "edges": [
-            {"source": "item_1", "target": "hub_1", "weight": 0.88}
+            {"source": 1, "target": 2, "weight": 0.88}
+        ],
+        "hubs": [
+            {"id": 100, "label": "Tech Hub", "member_ids": [1]}
         ]
     }
     graph_model = GraphResponse(**graph_data)
     assert len(graph_model.nodes) == 2
     assert graph_model.edges[0].weight == 0.88
+    assert len(graph_model.hubs) == 1
+    assert graph_model.hubs[0].member_ids == [1]
 
     # 4. QuizResponse
     quiz_data = {

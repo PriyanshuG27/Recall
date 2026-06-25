@@ -31,7 +31,7 @@ class UpstashRedis:
             self._client = httpx.AsyncClient(
                 base_url=settings.UPSTASH_REDIS_REST_URL,
                 headers={"Authorization": f"Bearer {settings.UPSTASH_REDIS_REST_TOKEN}"},
-                timeout=5.0,
+                timeout=10.0,
             )
         return self._client
 
@@ -120,6 +120,33 @@ class UpstashRedis:
             else:
                 out.append(item)
         return out
+
+    async def get(self, key: str) -> Optional[str]:
+        """Get the value of a key."""
+        data = await self._request("", ["GET", key])
+        if isinstance(data, dict):
+            if "error" in data:
+                raise RedisUnavailableError(self._redact(data["error"]))
+            return data.get("result")
+        return None
+
+    async def setex(self, key: str, seconds: int, value: str) -> bool:
+        """Set key to hold the string value and set key to timeout after a given number of seconds."""
+        data = await self._request("", ["SET", key, value, "EX", str(seconds)])
+        if isinstance(data, dict):
+            if "error" in data:
+                raise RedisUnavailableError(self._redact(data["error"]))
+            return data.get("result") == "OK"
+        return False
+
+    async def delete(self, key: str) -> int:
+        """Delete a key."""
+        data = await self._request("", ["DEL", key])
+        if isinstance(data, dict):
+            if "error" in data:
+                raise RedisUnavailableError(self._redact(data["error"]))
+            return int(data.get("result", 0))
+        return 0
 
     async def ping(self) -> bool:
         """Checks liveness of the Upstash Redis instance. Returns True if responsive."""
