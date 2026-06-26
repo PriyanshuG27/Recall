@@ -143,6 +143,13 @@ async def send_telegram_message(chat_id: str, text: str) -> None:
     # 1. Escape HTML special characters
     escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     
+    # 1.5 Clean up escaped backticks and convert markdown code blocks/inline code to HTML tags
+    escaped = escaped.replace("\\`", "`")
+    # Convert block code: ``` [lang] \n [code] \n ```
+    escaped = re.sub(r'```(?:[a-zA-Z0-9_-]+)?\n?(.*?)\n?```', r'<pre><code>\1</code></pre>', escaped, flags=re.DOTALL)
+    # Convert inline code: `code`
+    escaped = re.sub(r'`(.*?)`', r'<code>\1</code>', escaped)
+    
     # 2. Clean LaTeX math equations for Telegram HTML display
     escaped = clean_latex_for_telegram(escaped)
     
