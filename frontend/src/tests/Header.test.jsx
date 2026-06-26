@@ -99,15 +99,15 @@ describe('Header', () => {
     });
 
     // Menu should be hidden initially
-    expect(screen.queryByText('🌐 Connect Google Drive')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Connect Google Drive/)).not.toBeInTheDocument();
 
     // Click trigger to open menu
     fireEvent.click(screen.getByText('User 99999'));
-    expect(screen.getByText('🌐 Connect Google Drive')).toBeInTheDocument();
+    expect(screen.getByText(/Connect Google Drive/)).toBeInTheDocument();
 
     // Click trigger again to close menu
     fireEvent.click(screen.getByText('User 99999'));
-    expect(screen.queryByText('🌐 Connect Google Drive')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Connect Google Drive/)).not.toBeInTheDocument();
   });
 
   it('connects Google Drive via popup', async () => {
@@ -128,7 +128,7 @@ describe('Header', () => {
 
     fireEvent.click(screen.getByText('User 99999'));
     
-    fireEvent.click(screen.getByText('🌐 Connect Google Drive'));
+    fireEvent.click(screen.getByText(/Connect Google Drive/));
     expect(windowOpenSpy).toHaveBeenCalledWith(
       '/auth/google',
       'Connect Google Drive',
@@ -154,7 +154,7 @@ describe('Header', () => {
 
     fireEvent.click(screen.getByText('User 99999'));
     
-    fireEvent.click(screen.getByText('🚫 Disconnect Drive'));
+    fireEvent.click(screen.getByText(/Disconnect Drive/));
     
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledWith('/api/drive', { method: 'DELETE' });
@@ -179,7 +179,7 @@ describe('Header', () => {
 
     fireEvent.click(screen.getByText('User 99999'));
     
-    fireEvent.click(screen.getByText('🚪 Logout'));
+    fireEvent.click(screen.getByText(/Logout/));
     
     await waitFor(() => {
       expect(screen.queryByText('User 99999')).not.toBeInTheDocument();

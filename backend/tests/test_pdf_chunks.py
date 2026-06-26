@@ -114,6 +114,24 @@ class MockCursor:
     async def fetchall(self):
         query_upper = self._last_query.upper()
         
+        if "WITH " in query_upper:
+            # Consolidated search query
+            user_id = self._last_params[1]
+            rows = []
+            for item in self.state.items:
+                if item["user_id"] == user_id:
+                    rows.append((
+                        item["id"],
+                        item["title"],
+                        item["summary"],
+                        item["source_type"],
+                        item["source_url"],
+                        item.get("tags", []),
+                        datetime.now(),
+                        1.0  # RRF score
+                    ))
+            return rows
+            
         if "FROM ITEM_CHUNKS" in query_upper:
             user_id = self._last_params[0]
             seen = set()

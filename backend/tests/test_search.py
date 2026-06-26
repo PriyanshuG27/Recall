@@ -63,6 +63,45 @@ class RecordingCursor:
                     ("Bitmap Heap Scan on items  (cost=4.20..13.65 rows=2 width=32) (actual time=0.021..0.045 loops=1)",),
                     ("  ->  Bitmap Index Scan on idx_items_text_gin  (cost=0.00..4.20 rows=2 width=0) (actual time=0.012..0.012 loops=1)",)
                 ]
+        if "with direct_vector" in last_query:
+            vector_results = []
+            seen_ids = set()
+            for r in self.vector_rows:
+                item_id = r[0]
+                if item_id not in seen_ids:
+                    vector_results.append(r)
+                    seen_ids.add(item_id)
+            
+            text_results = []
+            seen_text_ids = set()
+            for r in self.text_rows:
+                item_id = r[0]
+                if item_id not in seen_text_ids:
+                    text_results.append(r)
+                    seen_text_ids.add(item_id)
+            
+            rrf_scores = {}
+            for rank, r in enumerate(vector_results, start=1):
+                item_id = r[0]
+                if item_id not in rrf_scores:
+                    rrf_scores[item_id] = (r, 0.0)
+                r_data, score = rrf_scores[item_id]
+                rrf_scores[item_id] = (r_data, score + 1.0 / (rank + 60))
+                
+            for rank, r in enumerate(text_results, start=1):
+                item_id = r[0]
+                if item_id not in rrf_scores:
+                    rrf_scores[item_id] = (r, 0.0)
+                r_data, score = rrf_scores[item_id]
+                rrf_scores[item_id] = (r_data, score + 1.0 / (rank + 60))
+                
+            sorted_results = sorted(rrf_scores.values(), key=lambda x: x[1], reverse=True)
+            
+            rows = []
+            for r, score in sorted_results[:5]:
+                rows.append((r[0], r[1], r[2], r[3], r[4], r[5], r[6], score))
+            return rows
+            
         if "embedding <=>" in last_query:
             return self.vector_rows
         if "similarity(" in last_query:
@@ -111,30 +150,25 @@ def get_auth_token(user_id=42):
 
 @pytest.mark.anyio
 async def test_search_service_user_isolation_and_sql_composition():
-    """hybrid_search must strictly include user_id in both vector and text query constraints."""
+    """hybrid_search must strictly include user_id in direct vector, chunks, text GIN, and join constraints."""
     mock_conn = RecordingConnection(RecordingCursor(user_id=42))
     
     results = await hybrid_search("test query", 42, mock_conn)
     cursor = mock_conn.cursor_inst
     
-    assert len(cursor.executed) == 3
+    assert len(cursor.executed) == 1
     
-    vector_query, vector_params = cursor.executed[0]
-    assert "WHERE user_id = %s" in vector_query
-    assert vector_params[0] == 42
-    assert "embedding <=> %s::vector" in vector_query
+    query, params = cursor.executed[0]
+    assert "WHERE user_id = %s" in query
+    assert "embedding <=> %s::vector" in query
+    assert "summary %% %s" in query
+    assert "similarity(summary, %s)" in query
     
-    chunk_query, chunk_params = cursor.executed[1]
-    assert "FROM item_chunks" in chunk_query
-    assert "WHERE user_id = %s" in chunk_query
-    assert chunk_params[0] == 42
-    assert "embedding <=> %s::vector" in chunk_query
-    
-    text_query, text_params = cursor.executed[2]
-    assert "WHERE user_id = %s" in text_query
-    assert text_params[0] == 42
-    assert "summary %% %s" in text_query
-    assert "similarity(summary, %s)" in text_query
+    # Check that user_id is bound in the key positions (1, 5, 8, 11)
+    assert params[1] == 42
+    assert params[5] == 42
+    assert params[8] == 42
+    assert params[11] == 42
 
 def test_search_api_endpoint_success(client):
     """POST /api/search with valid auth returns blended reciprocal rank fusion (RRF) results."""
@@ -204,18 +238,15 @@ def test_search_cross_user_isolation(client):
     
     assert response.status_code == 200
     
-    assert len(current_cursor.executed) == 4
+    assert len(current_cursor.executed) == 2
     user_query, user_params = current_cursor.executed[0]
     assert user_params == (100,)
     
-    vector_query, vector_params = current_cursor.executed[1]
-    assert vector_params[0] == 100
-    
-    chunk_query, chunk_params = current_cursor.executed[2]
-    assert chunk_params[0] == 100
-    
-    text_query, text_params = current_cursor.executed[3]
-    assert text_params[0] == 100
+    consolidated_query, consolidated_params = current_cursor.executed[1]
+    assert consolidated_params[1] == 100
+    assert consolidated_params[5] == 100
+    assert consolidated_params[8] == 100
+    assert consolidated_params[11] == 100
 
 @pytest.mark.anyio
 async def test_embed_text_cascades():
@@ -227,6 +258,11 @@ async def test_embed_text_cascades():
     orig_modal_token = settings.MODAL_API_TOKEN
     orig_gemini_key = settings.GEMINI_API_KEY
     orig_hf_token = getattr(settings, "HF_TOKEN", None)
+    
+    patch_get = mock.patch("backend.services.redis_client.redis.get", return_value=None)
+    patch_setex = mock.patch("backend.services.redis_client.redis.setex", return_value=True)
+    patch_get.start()
+    patch_setex.start()
     
     try:
         # Mock ENV to be production so it goes past the test check
@@ -364,6 +400,9 @@ async def test_embed_text_cascades():
 
             
     finally:
+        # Stop patches
+        patch_get.stop()
+        patch_setex.stop()
         # Restore settings
         settings.ENV = orig_env
         settings.MODAL_API_TOKEN = orig_modal_token

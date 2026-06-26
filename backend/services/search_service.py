@@ -17,12 +17,39 @@ async def embed_text(text: str) -> List[float]:
     If in testing mode, returns a mock vector.
     Otherwise, calls the Modal serverless GPU endpoint, falling back to local sentence-transformers
     (if installed), then to Gemini embedding, and finally a mock vector.
+    Results are cached in Redis.
     """
     if settings.ENV == "test":
         # Return a normalized mock 384-dim vector for testing/local development
         val = 1.0 / (384 ** 0.5)
         return [val] * 384
 
+    from backend.services.redis_client import redis
+    import json
+
+    cache_key = f"embed:{text}"
+    try:
+        cached_embed_str = await redis.get(cache_key)
+        if cached_embed_str:
+            cached_embed = json.loads(cached_embed_str)
+            if isinstance(cached_embed, list) and len(cached_embed) == 384:
+                return cached_embed
+    except Exception as e:
+        logger.warning("Failed to fetch embedding from Redis cache: %s", e)
+
+    embedding = await _generate_embedding_uncached(text)
+
+    try:
+        # Cache for 7 days (604800 seconds)
+        await redis.setex(cache_key, 604800, json.dumps(embedding))
+    except Exception as e:
+        logger.warning("Failed to write embedding to Redis cache: %s", e)
+
+    return embedding
+
+
+async def _generate_embedding_uncached(text: str) -> List[float]:
+    """Generate the embedding from remote API or local model without caching."""
     # 1. Try Modal if a real API token is configured
     if settings.MODAL_API_TOKEN and not settings.MODAL_API_TOKEN.startswith("ak-mock"):
         try:
@@ -117,102 +144,80 @@ async def hybrid_search(query: str, user_id: int, db: AsyncConnection) -> List[D
     # Step 1: Generate query embedding
     query_embedding = await embed_text(query)
 
-    vector_results = []
-    text_results = []
-
-    async with db.cursor() as cur:
-        # Step 2a: Direct items vector search (HNSW cosine distance)
-        vector_query = """
-            SELECT id, title, summary, source_type, source_url, tags, created_at
+    consolidated_query = """
+        WITH direct_vector AS (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> %s::vector) as rank
             FROM items
-            WHERE user_id = %s
+            WHERE user_id = %s AND (embedding <=> %s::vector) < 0.8
             ORDER BY embedding <=> %s::vector
-            LIMIT 20;
-        """
-        await cur.execute(vector_query, (user_id, query_embedding))
-        rows = await cur.fetchall()
-        direct_vector_results = []
-        for r in rows:
-            direct_vector_results.append({
-                "id": r[0],
-                "title": r[1],
-                "summary": r[2],
-                "source_type": r[3],
-                "source_url": r[4],
-                "tags": r[5] if r[5] is not None else [],
-                "created_at": r[6],
-            })
-
-        # Step 2b: Chunks vector search (HNSW cosine distance)
-        chunks_query = """
-            SELECT item_id 
-            FROM item_chunks 
-            WHERE user_id = %s 
-            ORDER BY embedding <=> %s::vector 
-            LIMIT 50;
-        """
-        await cur.execute(chunks_query, (user_id, query_embedding))
-        chunk_rows = await cur.fetchall()
-        
-        # Deduplicate while preserving rank order of first appearance
-        chunk_item_ids = []
-        seen_chunks = set()
-        for r in chunk_rows:
-            if r[0] not in seen_chunks:
-                chunk_item_ids.append(r[0])
-                seen_chunks.add(r[0])
-                if len(chunk_item_ids) >= 20:
-                    break
-        
-        # If we have matches from chunks, fetch their parent item details
-        chunk_vector_results = []
-        if chunk_item_ids:
-            details_query = """
-                SELECT id, title, summary, source_type, source_url, tags, created_at
-                FROM items
-                WHERE user_id = %s AND id = ANY(%s);
-            """
-            await cur.execute(details_query, (user_id, chunk_item_ids))
-            detail_rows = await cur.fetchall()
-            details_map = {r[0]: {
-                "id": r[0],
-                "title": r[1],
-                "summary": r[2],
-                "source_type": r[3],
-                "source_url": r[4],
-                "tags": r[5] if r[5] is not None else [],
-                "created_at": r[6],
-            } for r in detail_rows}
-            
-            # Maintain the sorting rank returned by the chunks query
-            for item_id in chunk_item_ids:
-                if item_id in details_map:
-                    chunk_vector_results.append(details_map[item_id])
-
-        # Merge direct vector matches and chunk-level vector matches, deduplicating by item id
-        vector_results = []
-        seen_ids = set()
-        for item in direct_vector_results:
-            if item["id"] not in seen_ids:
-                vector_results.append(item)
-                seen_ids.add(item["id"])
-        for item in chunk_vector_results:
-            if item["id"] not in seen_ids:
-                vector_results.append(item)
-                seen_ids.add(item["id"])
-
-        # Step 3: GIN trigram search on items summary
-        text_query = """
-            SELECT id, title, summary, source_type, source_url, tags, created_at
+            LIMIT 20
+        ),
+        chunk_vector AS (
+            SELECT item_id AS id, ROW_NUMBER() OVER (ORDER BY min_row_num) as rank
+            FROM (
+                SELECT item_id, MIN(row_num) as min_row_num
+                FROM (
+                    SELECT item_id, ROW_NUMBER() OVER (ORDER BY embedding <=> %s::vector) as row_num
+                    FROM item_chunks
+                    WHERE user_id = %s AND (embedding <=> %s::vector) < 0.8
+                    LIMIT 50
+                ) sub
+                GROUP BY item_id
+            ) sub2
+            ORDER BY min_row_num
+            LIMIT 20
+        ),
+        combined_vector_ids AS (
+            SELECT id, MIN(val_rank) AS final_rank
+            FROM (
+                SELECT id, rank AS val_rank FROM direct_vector
+                UNION ALL
+                SELECT id, rank + 20 AS val_rank FROM chunk_vector
+            ) u
+            GROUP BY id
+        ),
+        ranked_vector AS (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY final_rank) as rank
+            FROM combined_vector_ids
+        ),
+        text_search AS (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY similarity(summary, %s) DESC) as rank
             FROM items
             WHERE user_id = %s AND summary %% %s
             ORDER BY similarity(summary, %s) DESC
-            LIMIT 20;
-        """
-        await cur.execute(text_query, (user_id, query, query))
+            LIMIT 20
+        ),
+        rrf_scores AS (
+            SELECT 
+                COALESCE(v.id, t.id) as id,
+                COALESCE(1.0 / (v.rank + 60), 0.0) + COALESCE(1.0 / (t.rank + 60), 0.0) as rrf_score
+            FROM ranked_vector v
+            FULL OUTER JOIN text_search t ON v.id = t.id
+        )
+        SELECT 
+            i.id, i.title, i.summary, i.source_type, i.source_url, i.tags, i.created_at,
+            r.rrf_score
+        FROM rrf_scores r
+        JOIN items i ON r.id = i.id
+        WHERE i.user_id = %s
+        ORDER BY r.rrf_score DESC
+        LIMIT 5;
+    """
+
+    query_params = (
+        query_embedding, user_id, query_embedding, query_embedding,
+        query_embedding, user_id, query_embedding,
+        query, user_id, query, query,
+        user_id
+    )
+
+    async with db.cursor() as cur:
+        await cur.execute(consolidated_query, query_params)
         rows = await cur.fetchall()
+
+        results = []
         for r in rows:
-            text_results.append({
+            results.append({
                 "id": r[0],
                 "title": r[1],
                 "summary": r[2],
@@ -220,35 +225,7 @@ async def hybrid_search(query: str, user_id: int, db: AsyncConnection) -> List[D
                 "source_url": r[4],
                 "tags": r[5] if r[5] is not None else [],
                 "created_at": r[6],
+                "score": float(r[7]),
             })
 
-    # Step 4: Reciprocal Rank Fusion (RRF)
-    rrf_scores = {}
-
-    # Add vector search ranks (includes both direct matches and chunk matches)
-    for rank, item in enumerate(vector_results, start=1):
-        item_id = item["id"]
-        if item_id not in rrf_scores:
-            rrf_scores[item_id] = (item, 0.0)
-        item_data, score = rrf_scores[item_id]
-        rrf_scores[item_id] = (item_data, score + 1.0 / (rank + 60))
-
-    # Add text search ranks
-    for rank, item in enumerate(text_results, start=1):
-        item_id = item["id"]
-        if item_id not in rrf_scores:
-            rrf_scores[item_id] = (item, 0.0)
-        item_data, score = rrf_scores[item_id]
-        rrf_scores[item_id] = (item_data, score + 1.0 / (rank + 60))
-
-    # Sort merged, deduplicated results by score in descending order
-    sorted_results = sorted(rrf_scores.values(), key=lambda x: x[1], reverse=True)
-
-    # Return top 5 results with their RRF scores
-    top_5 = []
-    for item, score in sorted_results[:5]:
-        item_copy = dict(item)
-        item_copy["score"] = score
-        top_5.append(item_copy)
-
-    return top_5
+    return results

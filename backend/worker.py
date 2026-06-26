@@ -480,6 +480,26 @@ async def process_task(task: Dict[str, Any]) -> None:
                 await redis.delete(f"graph:{user_id}")
             except Exception as e:
                 logger.error("Failed to delete graph cache: %s", e)
+                
+            # Broadcast WS message for Toast Notification
+            try:
+                from backend.routes.api import manager
+                st_map = {
+                    "url": "url",
+                    "voice": "voice",
+                    "pdf": "pdf",
+                    "photo": "image",
+                    "image": "image",
+                    "text": "text"
+                }
+                source_type = st_map.get(content_type, "text")
+                await manager.send_personal_message({
+                    "type": "new_node",
+                    "source_type": source_type
+                }, user_id)
+            except Exception as ws_err:
+                logger.error("Failed to broadcast new_node WS message: %s", ws_err)
+                
             logger.info("Successfully completed processing for update_id=%s, invalidated graph cache.", update_id)
 
         except Exception as exc:

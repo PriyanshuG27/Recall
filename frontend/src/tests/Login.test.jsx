@@ -75,4 +75,34 @@ describe('Login Component', () => {
       expect(screen.getByText('Bypass login failed.')).toBeInTheDocument();
     });
   });
+
+  it('performs developer bypass login with custom chat ID if typed', async () => {
+    const fetchSpy = vi.spyOn(window, 'fetch').mockImplementation((url) => {
+      if (url.includes('/auth/telegram')) {
+        return Promise.resolve({ ok: true });
+      }
+      if (url.includes('/auth/me')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ id: 98765, chat_id: '98765' }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    });
+
+    render(
+      <AuthProvider>
+        <Login />
+      </AuthProvider>
+    );
+
+    const input = screen.getByLabelText('Telegram Chat ID to view your bot items');
+    fireEvent.change(input, { target: { value: '98765' } });
+    fireEvent.click(screen.getByText('⚡ Developer Bypass Login'));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith('/auth/telegram?id=98765&mock=true');
+      expect(fetchSpy).toHaveBeenCalledWith('/auth/me');
+    });
+  });
 });

@@ -54,6 +54,7 @@ class TagCountResponse(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(..., description="Search query string.")
     limit: int = Field(5, ge=1, description="Maximum number of results to return (default 5).")
+    rag: bool = Field(True, description="Whether to run RAG generation (default True).")
 
 class SearchResponseItem(BaseModel):
     id: int = Field(..., description="Internal surrogate ID of the item.")
@@ -75,6 +76,10 @@ class SearchSourceItem(BaseModel):
     title: Optional[str] = Field(None, description="Extracted or generated title.")
     summary: str = Field(..., description="LLM-generated plain-text summary.")
     relevance: float = Field(..., description="Relevance score (RRF or similarity).")
+    source_type: str = Field("text", description="Source type of the item.")
+    source_url: Optional[str] = Field(None, description="Source URL of the item.")
+    tags: List[str] = Field(default_factory=list, description="Tags associated with the item.")
+    created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp.")
 
 class RAGSearchResponse(BaseModel):
     answer: Optional[str] = Field(None, description="Synthesised answer generated from context, or null if skipped/failed.")
@@ -155,3 +160,16 @@ class ReminderCreateRequest(BaseModel):
 class ErrorResponse(BaseModel):
     error: str = Field(..., description="Programmatic error code.")
     message: str = Field(..., description="Human-readable error description.")
+
+# ---------------------------------------------------------------------------
+# User profile & settings schemas
+# ---------------------------------------------------------------------------
+class UserMeResponse(BaseModel):
+    timezone_offset: float = Field(..., description="Timezone offset in hours.")
+    streak_count: int = Field(..., description="Current daily review streak.")
+    drive_connected: bool = Field(..., description="Whether Google Drive is connected.")
+    total_saves: int = Field(..., description="Total count of saved items.")
+    quizzes_answered: int = Field(..., description="Total quizzes answered.")
+
+class UserMeUpdateRequest(BaseModel):
+    timezone_offset: Optional[float] = Field(None, ge=-12.0, le=14.0, description="Timezone offset in hours.")

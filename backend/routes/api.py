@@ -36,6 +36,8 @@ from backend.models.schemas import (
     TagCountResponse,
     SearchSourceItem,
     RAGSearchResponse,
+    UserMeResponse,
+    UserMeUpdateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -316,7 +318,7 @@ async def delete_item(
 # ---------------------------------------------------------------------------
 # Search Group
 # ---------------------------------------------------------------------------
-from datetime import datetime
+from datetime import datetime, timezone
 
 @router.post(
     "/search",
@@ -349,14 +351,18 @@ async def search_items(
                 id=r["id"],
                 title=r["title"],
                 summary=r["summary"],
-                relevance=r["score"]
+                relevance=r["score"],
+                source_type=r.get("source_type", "text"),
+                source_url=r.get("source_url"),
+                tags=r.get("tags", []),
+                created_at=r.get("created_at", datetime.now(timezone.utc))
             )
         )
         summaries.append(r["summary"] or "")
 
     # Conditional RAG answer generation
     answer = None
-    if len(results_limited) >= 3:
+    if req.rag and len(results_limited) >= 3:
         cascade = AICascade()
         try:
             answer = await cascade.answer_question(req.query, summaries)
@@ -462,25 +468,54 @@ async def get_graph(
     edges_dict = {}
 
     if recent_item_ids:
+        use_hub_only = len(item_rows) > 200
         async with db.cursor() as cur:
-            await cur.execute(
-                """
-                SELECT s.id AS source_id, t.id AS target_id, (s.embedding <=> t.embedding) AS dist
-                FROM (
-                    SELECT id, embedding
-                    FROM items
-                    WHERE id = ANY(%s) AND user_id = %s
-                ) s
-                CROSS JOIN LATERAL (
-                    SELECT id, (s.embedding <=> embedding) AS dist
-                    FROM items
-                    WHERE user_id = %s AND id != s.id
-                    ORDER BY dist
-                    LIMIT 5
-                ) t
-                """,
-                (recent_item_ids, user.id, user.id)
-            )
+            if use_hub_only:
+                # Skip full pairwise similarity search. Only compare items sharing a semantic hub.
+                await cur.execute(
+                    """
+                    SELECT s.id AS source_id, t.id AS target_id, t.dist
+                    FROM (
+                        SELECT id, embedding
+                        FROM items
+                        WHERE id = ANY(%s) AND user_id = %s
+                    ) s
+                    CROSS JOIN LATERAL (
+                        SELECT t_inner.id AS id, (s.embedding <=> t_inner.embedding) AS dist
+                        FROM items t_inner
+                        WHERE t_inner.user_id = %s AND t_inner.id != s.id
+                          AND EXISTS (
+                              SELECT 1 FROM semantic_hubs
+                              WHERE user_id = %s
+                                AND s.id = ANY(member_ids)
+                                AND t_inner.id = ANY(member_ids)
+                          )
+                        ORDER BY dist
+                        LIMIT 6
+                    ) t
+                    """,
+                    (recent_item_ids, user.id, user.id, user.id)
+                )
+            else:
+                # Normal pairwise comparison via HNSW index
+                await cur.execute(
+                    """
+                    SELECT s.id AS source_id, t.id AS target_id, t.dist
+                    FROM (
+                        SELECT id, embedding
+                        FROM items
+                        WHERE id = ANY(%s) AND user_id = %s
+                    ) s
+                    CROSS JOIN LATERAL (
+                        SELECT id, (s.embedding <=> embedding) AS dist
+                        FROM items
+                        WHERE user_id = %s AND id != s.id
+                        ORDER BY dist
+                        LIMIT 6
+                    ) t
+                    """,
+                    (recent_item_ids, user.id, user.id)
+                )
             edge_rows = await cur.fetchall()
 
         # Deduplicate edges: keep only one edge between A and B, using lower ID as source
@@ -763,3 +798,252 @@ async def retry_dlq_task(
         await db.commit()
         
     return {"queued": True}
+
+
+# ---------------------------------------------------------------------------
+# WebSocket Group
+# ---------------------------------------------------------------------------
+from fastapi import WebSocket, WebSocketDisconnect
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[int, list[WebSocket]] = {}
+
+    async def connect(self, user_id: int, websocket: WebSocket):
+        await websocket.accept()
+        if user_id not in self.active_connections:
+            self.active_connections[user_id] = []
+        self.active_connections[user_id].append(websocket)
+
+    def disconnect(self, user_id: int, websocket: WebSocket):
+        if user_id in self.active_connections:
+            if websocket in self.active_connections[user_id]:
+                self.active_connections[user_id].remove(websocket)
+            if not self.active_connections[user_id]:
+                del self.active_connections[user_id]
+
+    async def send_personal_message(self, message: dict, user_id: int):
+        if user_id in self.active_connections:
+            for connection in list(self.active_connections[user_id]):
+                try:
+                    await connection.send_json(message)
+                except Exception:
+                    self.disconnect(user_id, connection)
+
+manager = ConnectionManager()
+
+# ---------------------------------------------------------------------------
+# User Profile & Settings Group
+# ---------------------------------------------------------------------------
+@router.get(
+    "/me",
+    response_model=UserMeResponse,
+    tags=["profile"],
+    summary="Get user profile and settings",
+    description="Returns current authenticated user details, timezone offset, and stats.",
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse, "description": "User not found."},
+    },
+)
+async def get_user_me(
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+):
+    async with db.cursor() as cur:
+        await cur.execute(
+            "SELECT timezone_offset, streak_count, google_refresh_token FROM users WHERE id = %s;",
+            (user.id,)
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        db_offset = row[0] or 0
+        streak = row[1] or 0
+        has_drive = row[2] is not None
+
+        # Convert minutes (stored in DB) to hours for API layer (float division)
+        offset_hours = round(db_offset / 60.0, 2)
+
+        # Total saves
+        await cur.execute(
+            "SELECT COUNT(*) FROM items WHERE user_id = %s;",
+            (user.id,)
+        )
+        total_saves_row = await cur.fetchone()
+        total_saves = total_saves_row[0] if total_saves_row else 0
+
+        # Quizzes answered
+        await cur.execute(
+            "SELECT COUNT(*) FROM quizzes WHERE user_id = %s;",
+            (user.id,)
+        )
+        quizzes_row = await cur.fetchone()
+        quizzes_answered = quizzes_row[0] if quizzes_row else 0
+
+        return {
+            "timezone_offset": offset_hours,
+            "streak_count": streak,
+            "drive_connected": has_drive,
+            "total_saves": total_saves,
+            "quizzes_answered": quizzes_answered,
+        }
+
+@router.patch(
+    "/me",
+    response_model=UserMeResponse,
+    tags=["profile"],
+    summary="Update user settings",
+    description="Updates user settings (e.g., timezone_offset in hours, stored as minutes in DB).",
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse, "description": "User not found."},
+    },
+)
+async def update_user_me(
+    req: UserMeUpdateRequest,
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+):
+    async with db.cursor() as cur:
+        # Check if user exists
+        await cur.execute(
+            "SELECT timezone_offset FROM users WHERE id = %s;",
+            (user.id,)
+        )
+        user_exists = await cur.fetchone()
+        if not user_exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Only update fields that are provided in the request
+        update_fields = []
+        params = []
+
+        if req.timezone_offset is not None:
+            # Convert hours to minutes
+            offset_minutes = int(req.timezone_offset * 60)
+            update_fields.append("timezone_offset = %s")
+            params.append(offset_minutes)
+
+        if update_fields:
+            params.append(user.id)
+            query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = %s;"
+            await cur.execute(query, tuple(params))
+            await db.commit()
+
+        # Fetch the updated user details
+        await cur.execute(
+            "SELECT timezone_offset, streak_count, google_refresh_token FROM users WHERE id = %s;",
+            (user.id,)
+        )
+        row = await cur.fetchone()
+        db_offset = row[0] or 0
+        streak = row[1] or 0
+        has_drive = row[2] is not None
+        offset_hours = round(db_offset / 60.0, 2)
+
+        # Total saves
+        await cur.execute(
+            "SELECT COUNT(*) FROM items WHERE user_id = %s;",
+            (user.id,)
+        )
+        total_saves_row = await cur.fetchone()
+        total_saves = total_saves_row[0] if total_saves_row else 0
+
+        # Quizzes answered
+        await cur.execute(
+            "SELECT COUNT(*) FROM quizzes WHERE user_id = %s;",
+            (user.id,)
+        )
+        quizzes_row = await cur.fetchone()
+        quizzes_answered = quizzes_row[0] if quizzes_row else 0
+
+        return {
+            "timezone_offset": offset_hours,
+            "streak_count": streak,
+            "drive_connected": has_drive,
+            "total_saves": total_saves,
+            "quizzes_answered": quizzes_answered,
+        }
+
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["profile"],
+    summary="Delete user account",
+    description="Deletes the user account and clears all associated data via database cascade.",
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse, "description": "User not found."},
+    },
+)
+async def delete_user_me(
+    response: Response,
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+):
+    async with db.cursor() as cur:
+        # Check if user exists
+        await cur.execute(
+            "SELECT id FROM users WHERE id = %s;",
+            (user.id,)
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Perform deletion
+        await cur.execute(
+            "DELETE FROM users WHERE id = %s;",
+            (user.id,)
+        )
+        await db.commit()
+
+    # Clear auth cookies
+    response.delete_cookie("recall_session", httponly=True, secure=True, samesite="lax")
+    response.delete_cookie("jwt", httponly=True, secure=True, samesite="lax")
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    jwt_cookie = websocket.cookies.get("recall_session") or websocket.cookies.get("jwt")
+    if not jwt_cookie:
+        await websocket.close(code=4001)
+        return
+
+    try:
+        from backend.middleware.twa_auth import verify_jwt
+        from backend.config import settings
+        payload = verify_jwt(jwt_cookie, settings.JWT_SECRET)
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            await websocket.close(code=4001)
+            return
+        user_id = int(user_id_str)
+    except Exception:
+        await websocket.close(code=4001)
+        return
+
+    await manager.connect(user_id, websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        manager.disconnect(user_id, websocket)
+    except Exception:
+        manager.disconnect(user_id, websocket)
+

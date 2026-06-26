@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 export default function Login() {
   const { login } = useAuth();
   const [error, setError] = useState('');
+  const [customChatId, setCustomChatId] = useState('');
 
   // Load the live Telegram Login widget
   useEffect(() => {
@@ -23,7 +24,8 @@ export default function Login() {
 
   const handleDeveloperBypass = async () => {
     try {
-      const res = await fetch('/auth/telegram?id=12345&mock=true');
+      const targetId = customChatId.trim() || '12345';
+      const res = await fetch(`/auth/telegram?id=${targetId}&mock=true`);
       if (res.ok) {
         const check = await fetch('/auth/me');
         if (check.ok) {
@@ -58,6 +60,29 @@ export default function Login() {
         </div>
 
         <div className="divider">Or Developer Access</div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%', marginBottom: '0.75rem' }}>
+          <label htmlFor="custom-chat-id" style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', textAlign: 'left' }}>
+            Telegram Chat ID to view your bot items
+          </label>
+          <input
+            id="custom-chat-id"
+            type="text"
+            value={customChatId}
+            onChange={(e) => setCustomChatId(e.target.value)}
+            placeholder="e.g. 123456789"
+            style={{
+              width: '100%',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--border-glass)',
+              color: 'var(--color-text)',
+              padding: '0.5rem',
+              borderRadius: '6px',
+              outline: 'none',
+              fontSize: '0.875rem'
+            }}
+          />
+        </div>
 
         <button className="btn btn-primary" onClick={handleDeveloperBypass}>
           ⚡ Developer Bypass Login

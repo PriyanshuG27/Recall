@@ -302,7 +302,7 @@ body {
 }
 
 /* Constellation Mind Map Animation mockup */
-.constellation-wrapper {
+.login-constellation-wrapper {
   margin-top: 2rem;
   height: 300px;
   position: relative;
@@ -312,7 +312,7 @@ body {
   overflow: hidden;
 }
 
-.constellation-node {
+.login-constellation-node {
   position: absolute;
   width: 8px;
   height: 8px;

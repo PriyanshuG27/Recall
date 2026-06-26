@@ -182,6 +182,17 @@ async def auth_google():
         400: {"model": ErrorResponse, "description": "OAuth code exchange failed."},
     }
 )
-async def auth_google_callback():
+async def auth_google_callback(
+    user: UserContext = Depends(get_current_user)
+):
     """Handle Google OAuth callback."""
+    try:
+        from backend.routes.api import manager
+        await manager.send_personal_message({
+            "type": "google_connected"
+        }, user.id)
+    except Exception as ws_err:
+        logger.error("Failed to broadcast google_connected WS message: %s", ws_err)
+        
     return {"status": "ok"}
+
