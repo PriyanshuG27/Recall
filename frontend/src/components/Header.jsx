@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { MagnifyingGlass, GoogleLogo, CloudX, SignOut, CaretDown, CaretUp, ShareNetwork, List, Gear } from '@phosphor-icons/react';
+import ConnectionStatus from './ConnectionStatus';
 
-export default function Header({ onSearch, dueQuizCount, viewMode = 'graph', onViewModeChange, searchInputRef: externalSearchInputRef, searchQuery = '', onSettingsClick }) {
+export default function Header({ onSearch, dueQuizCount, viewMode = 'nodes', onViewModeChange, searchInputRef: externalSearchInputRef, searchQuery = '', onSettingsClick }) {
   const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchVal, setSearchVal] = useState('');
@@ -158,18 +159,25 @@ export default function Header({ onSearch, dueQuizCount, viewMode = 'graph', onV
           <>
             <div className="view-toggle">
               <button 
-                className={`toggle-btn ${viewMode === 'graph' ? 'active' : ''}`}
-                onClick={() => onViewModeChange && onViewModeChange('graph')}
-                aria-label="Switch to Graph View"
+                className={`toggle-btn ${viewMode === 'nodes' ? 'active' : ''}`}
+                onClick={() => onViewModeChange && onViewModeChange('nodes')}
+                aria-label="Switch to Nodes View"
               >
-                <ShareNetwork size={16} aria-hidden="true" /> Graph
+                🌌 Nodes
+              </button>
+              <button 
+                className={`toggle-btn ${viewMode === 'hubs' ? 'active' : ''}`}
+                onClick={() => onViewModeChange && onViewModeChange('hubs')}
+                aria-label="Switch to Hubs View"
+              >
+                🌐 Hubs
               </button>
               <button 
                 className={`toggle-btn ${viewMode === 'feed' ? 'active' : ''}`}
                 onClick={() => onViewModeChange && onViewModeChange('feed')}
                 aria-label="Switch to Feed View"
               >
-                <List size={16} aria-hidden="true" /> Feed
+                📋 Feed
               </button>
             </div>
 
@@ -179,6 +187,8 @@ export default function Header({ onSearch, dueQuizCount, viewMode = 'graph', onV
                 <span className="quiz-badge-count">{dueQuizCount}</span>
               )}
             </button>
+
+            <ConnectionStatus />
 
             <div className="profile-menu-container" ref={dropdownRef}>
               <button

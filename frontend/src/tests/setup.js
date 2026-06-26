@@ -11,6 +11,17 @@ window.fetch = vi.fn();
 // Mock alert
 window.alert = vi.fn();
 
+// Mock matchMedia globally
+window.matchMedia = window.matchMedia || function() {
+  return {
+    matches: false,
+    addListener: function() {},
+    removeListener: function() {},
+    addEventListener: function() {},
+    removeEventListener: function() {}
+  };
+};
+
 // Mock IntersectionObserver
 class MockIntersectionObserver {
   constructor(callback) {
@@ -53,12 +64,20 @@ vi.mock('@phosphor-icons/react', () => {
     XCircle: makeMock('XCircle'),
     Info: makeMock('Info'),
     Warning: makeMock('Warning'),
-    Gear: makeMock('Gear')
+    Gear: makeMock('Gear'),
+    X: makeMock('X'),
+    Bell: makeMock('Bell'),
+    BookOpen: makeMock('BookOpen'),
+    TextT: makeMock('TextT')
   };
 });
 
 // Mock WebSocket globally to prevent ReferenceError in testing environments
 class MockWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
   constructor(url) {
     this.url = url;
     this.readyState = 0;
@@ -71,6 +90,7 @@ class MockWebSocket {
   close = vi.fn();
 }
 window.WebSocket = MockWebSocket;
+global.WebSocket = MockWebSocket;
 
 // Mock Telegram WebApp SDK globally
 window.Telegram = {
@@ -89,6 +109,42 @@ window.Telegram = {
     }
   }
 };
+
+// Mock Canvas 2D context globally
+const mockContext = {
+  clearRect: vi.fn(),
+  save: vi.fn(),
+  restore: vi.fn(),
+  translate: vi.fn(),
+  scale: vi.fn(),
+  beginPath: vi.fn(),
+  moveTo: vi.fn(),
+  quadraticCurveTo: vi.fn(),
+  stroke: vi.fn(),
+  arc: vi.fn(),
+  fill: vi.fn(),
+  createRadialGradient: vi.fn(() => ({
+    addColorStop: vi.fn()
+  })),
+  fillText: vi.fn(),
+  setLineDash: vi.fn()
+};
+
+HTMLCanvasElement.prototype.getContext = vi.fn().mockImplementation((type) => {
+  if (type === '2d') return mockContext;
+  return null;
+});
+
+// Mock useGraphSocket globally
+vi.mock('../hooks/useGraphSocket', () => {
+  return {
+    useGraphSocket: vi.fn(() => ({
+      connectionStatus: 'connected',
+      lastSyncTime: Date.now(),
+    })),
+  };
+});
+
 
 
 

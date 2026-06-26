@@ -481,22 +481,30 @@ async def process_task(task: Dict[str, Any]) -> None:
             except Exception as e:
                 logger.error("Failed to delete graph cache: %s", e)
                 
-            # Broadcast WS message for Toast Notification
+            # Broadcast WS message for Toast Notification and real-time updates
             try:
-                from backend.routes.api import manager
-                st_map = {
-                    "url": "url",
-                    "voice": "voice",
-                    "pdf": "pdf",
-                    "photo": "image",
-                    "image": "image",
-                    "text": "text"
-                }
-                source_type = st_map.get(content_type, "text")
-                await manager.send_personal_message({
-                    "type": "new_node",
-                    "source_type": source_type
-                }, user_id)
+                from backend.routes.websocket import broadcast
+                
+                # Fetch saved node details
+                async with _pool.connection() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            "SELECT id, title, source_type, created_at FROM items WHERE id = %s AND user_id = %s;",
+                            (item_id, user_id)
+                        )
+                        item_row = await cur.fetchone()
+                
+                if item_row:
+                    node_id, node_title, node_source_type, node_created_at = item_row
+                    await broadcast(user_id, {
+                        "type": "new_node",
+                        "node": {
+                            "id": str(node_id),
+                            "title": node_title,
+                            "source_type": node_source_type,
+                            "created_at": node_created_at.isoformat() if hasattr(node_created_at, "isoformat") else str(node_created_at)
+                        }
+                    })
             except Exception as ws_err:
                 logger.error("Failed to broadcast new_node WS message: %s", ws_err)
                 

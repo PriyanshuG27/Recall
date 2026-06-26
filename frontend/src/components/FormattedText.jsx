@@ -17,6 +17,8 @@ export default function FormattedText({ text, excerptMode = false }) {
     // Strip bold/italic markup
     plainText = plainText.replace(/\*\*([^*]+)\*\*/g, '$1');
     plainText = plainText.replace(/\*([^*]+)\*/g, '$1');
+    // Strip inline code backticks
+    plainText = plainText.replace(/`([^`]+)`/g, '$1');
     // Strip block equations
     plainText = plainText.replace(/\\\[([\s\S]+?)\\\]/g, '$1');
     plainText = plainText.replace(/\\\(([\s\S]+?)\\\)/g, '$1');
@@ -62,6 +64,7 @@ export default function FormattedText({ text, excerptMode = false }) {
       const lines = part.split('\n');
       let currentList = [];
       let currentParagraph = [];
+      let currentTable = null;
 
       const flushParagraph = (key) => {
         if (currentParagraph.length > 0) {
@@ -113,9 +116,129 @@ export default function FormattedText({ text, excerptMode = false }) {
         }
       };
 
-      lines.forEach((line, lineIdx) => {
+      const flushTable = (key) => {
+        if (currentTable) {
+          const { headers, alignments, rows } = currentTable;
+          renderedElements.push(
+            <div 
+              key={`table-container-${key}`} 
+              style={{ 
+                overflowX: 'auto', 
+                margin: '1.25rem 0',
+                borderRadius: '8px',
+                border: '1px solid var(--border-glass, rgba(255,255,255,0.08))',
+                background: 'rgba(255,255,255,0.01)'
+              }}
+            >
+              <table 
+                style={{ 
+                  width: '100%', 
+                  borderCollapse: 'collapse', 
+                  fontSize: '0.8125rem',
+                  fontFamily: 'Inter, sans-serif'
+                }}
+              >
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--border-glass, rgba(255,255,255,0.08))' }}>
+                    {headers.map((h, colIdx) => (
+                      <th 
+                        key={`th-${colIdx}`} 
+                        style={{ 
+                          padding: '0.65rem 0.85rem', 
+                          fontWeight: 600, 
+                          color: 'var(--color-primary, #6c63ff)', 
+                          textAlign: alignments[colIdx] || 'left' 
+                        }}
+                      >
+                        {parseInlineStyles(h)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, rowIdx) => (
+                    <tr 
+                      key={`tr-${rowIdx}`} 
+                      style={{ 
+                        background: rowIdx % 2 === 1 ? 'rgba(255,255,255,0.01)' : 'transparent',
+                        borderBottom: rowIdx < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none'
+                      }}
+                    >
+                      {headers.map((_, colIdx) => (
+                        <td 
+                          key={`td-${rowIdx}-${colIdx}`} 
+                          style={{ 
+                            padding: '0.65rem 0.85rem', 
+                            color: 'var(--color-text-muted, #8e8e9f)', 
+                            textAlign: alignments[colIdx] || 'left' 
+                          }}
+                        >
+                          {parseInlineStyles(row[colIdx] || '')}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+          currentTable = null;
+        }
+      };
+
+      let i = 0;
+      while (i < lines.length) {
+        let line = lines[i];
+        
+        // Split combined divider/row lines (e.g. "|---|---|| row cell")
+        if (line.includes('||')) {
+          const doublePipeIdx = line.indexOf('||');
+          const left = line.substring(0, doublePipeIdx + 1);
+          const right = line.substring(doublePipeIdx + 1);
+          
+          const rightFirstPart = right.split('||')[0];
+          if (isTableDivider(left) || isTableDivider(rightFirstPart)) {
+            lines[i] = left;
+            lines.splice(i + 1, 0, right);
+            line = left;
+          }
+        }
+
         const trimmedLine = line.trim();
-        const key = `part-${index}-line-${lineIdx}`;
+        const key = `part-${index}-line-${i}`;
+
+        // Table Parsing logic
+        if (currentTable) {
+          if (trimmedLine.includes('|')) {
+            const cells = splitTableLine(trimmedLine);
+            currentTable.rows.push(cells);
+            i++;
+            continue;
+          } else {
+            flushTable(key);
+          }
+        }
+
+        if (!currentTable && trimmedLine.includes('|') && i + 1 < lines.length) {
+          // Check if lines[i+1] (which might be split already) is a divider
+          let nextLine = lines[i + 1];
+          if (nextLine.includes('||')) {
+            const doublePipeIdx = nextLine.indexOf('||');
+            const left = nextLine.substring(0, doublePipeIdx + 1);
+            if (isTableDivider(left)) {
+              nextLine = left;
+            }
+          }
+          if (isTableDivider(nextLine)) {
+            flushParagraph(key);
+            flushList(key);
+            const headers = splitTableLine(trimmedLine);
+            const alignments = parseAlignments(nextLine);
+            currentTable = { headers, alignments, rows: [] };
+            i += 2; // skip header and divider
+            continue;
+          }
+        }
 
         if (trimmedLine.startsWith('### ')) {
           flushParagraph(key);
@@ -180,12 +303,15 @@ export default function FormattedText({ text, excerptMode = false }) {
           flushList(key);
           currentParagraph.push(trimmedLine);
         }
-      });
+
+        i++;
+      }
 
       // Flush any remaining blocks
       const finalKey = `part-${index}-final`;
       flushParagraph(finalKey);
       flushList(finalKey);
+      flushTable(finalKey);
     }
   });
 
@@ -264,17 +390,22 @@ function parseInlineStyles(text) {
     <em key={match} style={{ fontStyle: 'italic' }}>{content}</em>
   ));
 
+  // 3. Inline Code (`code`)
+  parts = splitByRegex(parts, /`([^`]+)`/g, (match, content) => (
+    <code key={match} className="code-inline" style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.8125rem', padding: '0.15rem 0.35rem', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', color: '#00D4AA', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{content}</code>
+  ));
+
   // 3. Inline LaTeX (\(...\) or $...$)
   parts = splitByRegex(parts, /\\\(([\s\S]+?)\\\)/g, (match, content) => (
-    <code key={match} className="math-inline" style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.8125rem', padding: '0.15rem 0.35rem', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', color: '#00D4AA', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{formatMathText(content)}</code>
+    <code key={match} className="math-inline" style={{ fontFamily: 'Cambria Math, Latin Modern Math, Georgia, serif', fontSize: '0.925rem', fontStyle: 'italic', padding: '0.15rem 0.35rem', background: 'rgba(0, 212, 170, 0.04)', borderRadius: '4px', border: '1px solid rgba(0, 212, 170, 0.08)', color: 'var(--color-secondary, #00D4AA)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{formatMathText(content)}</code>
   ));
   parts = splitByRegex(parts, /\$([^$\n]+?)\$/g, (match, content) => (
-    <code key={match} className="math-inline" style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.8125rem', padding: '0.15rem 0.35rem', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', color: '#00D4AA', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{formatMathText(content)}</code>
+    <code key={match} className="math-inline" style={{ fontFamily: 'Cambria Math, Latin Modern Math, Georgia, serif', fontSize: '0.925rem', fontStyle: 'italic', padding: '0.15rem 0.35rem', background: 'rgba(0, 212, 170, 0.04)', borderRadius: '4px', border: '1px solid rgba(0, 212, 170, 0.08)', color: 'var(--color-secondary, #00D4AA)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{formatMathText(content)}</code>
   ));
 
   // 4. Block LaTeX (\[...\])
   parts = splitByRegex(parts, /\\\[([\s\S]+?)\\\]/g, (match, content) => (
-    <div key={match} className="math-block" style={{ display: 'block', textAlign: 'center', margin: '0.75rem 0', padding: '0.75rem', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.875rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', borderLeft: '3px solid var(--color-primary)', color: '#00D4AA', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{formatMathText(content)}</div>
+    <div key={match} className="math-block" style={{ display: 'block', textAlign: 'center', margin: '1rem 0', padding: '1rem 1.25rem', fontFamily: 'Cambria Math, Latin Modern Math, Georgia, serif', fontSize: '1.05rem', background: 'rgba(108, 99, 255, 0.04)', borderRadius: '8px', border: '1px solid rgba(108, 99, 255, 0.1)', color: '#f1f1f6', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', letterSpacing: '0.5px' }}>{formatMathText(content)}</div>
   ));
 
   return parts.map(p => p.type === 'text' ? p.content : p.element);
@@ -323,3 +454,31 @@ function splitByRegex(parts, regex, elementCreator) {
 
   return result;
 }
+
+const isTableDivider = (str) => {
+  const clean = str.trim();
+  if (!clean.includes('|')) return false;
+  const stripped = clean.replace(/[|:\s-]/g, '');
+  return stripped === '' && clean.replace(/[^-]/g, '').length > 0;
+};
+
+const splitTableLine = (str) => {
+  let parts = str.split('|');
+  if (parts[0].trim() === '') parts.shift();
+  if (parts.length > 0 && parts[parts.length - 1].trim() === '') parts.pop();
+  return parts.map(cell => cell.trim());
+};
+
+const parseAlignments = (str) => {
+  let parts = str.split('|');
+  if (parts[0].trim() === '') parts.shift();
+  if (parts.length > 0 && parts[parts.length - 1].trim() === '') parts.pop();
+  return parts.map(col => {
+    const trimmed = col.trim();
+    const alignLeft = trimmed.startsWith(':');
+    const alignRight = trimmed.endsWith(':');
+    if (alignLeft && alignRight) return 'center';
+    if (alignRight) return 'right';
+    return 'left';
+  });
+};

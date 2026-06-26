@@ -806,29 +806,24 @@ async def retry_dlq_task(
 from fastapi import WebSocket, WebSocketDisconnect
 
 class ConnectionManager:
-    def __init__(self):
-        self.active_connections: dict[int, list[WebSocket]] = {}
-
     async def connect(self, user_id: int, websocket: WebSocket):
         await websocket.accept()
-        if user_id not in self.active_connections:
-            self.active_connections[user_id] = []
-        self.active_connections[user_id].append(websocket)
+        from backend.routes.websocket import active_connections
+        if user_id in active_connections:
+            try:
+                await active_connections[user_id].close(code=1000)
+            except Exception:
+                pass
+        active_connections[user_id] = websocket
 
     def disconnect(self, user_id: int, websocket: WebSocket):
-        if user_id in self.active_connections:
-            if websocket in self.active_connections[user_id]:
-                self.active_connections[user_id].remove(websocket)
-            if not self.active_connections[user_id]:
-                del self.active_connections[user_id]
+        from backend.routes.websocket import active_connections
+        if user_id in active_connections and active_connections[user_id] == websocket:
+            del active_connections[user_id]
 
     async def send_personal_message(self, message: dict, user_id: int):
-        if user_id in self.active_connections:
-            for connection in list(self.active_connections[user_id]):
-                try:
-                    await connection.send_json(message)
-                except Exception:
-                    self.disconnect(user_id, connection)
+        from backend.routes.websocket import broadcast
+        await broadcast(user_id, message)
 
 manager = ConnectionManager()
 

@@ -1362,26 +1362,17 @@ textarea:focus-visible,
   border-color: var(--color-primary);
 }
 
-/* Hub Centroid label styling (always visible, uppercase, clean monospace) */
+/* Hub Centroid label styling (visually hidden, but kept in DOM for screen readers & tests) */
 .constellation-node-hub-label {
   position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  color: var(--color-text-muted);
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
   pointer-events: none;
-  opacity: 0.75;
-  transition: color 0.3s ease;
-  white-space: nowrap;
-}
-
-.constellation-node:hover .constellation-node-hub-label {
-  color: var(--color-secondary);
-  opacity: 1;
 }
 
 /* Outer rotating halo ring for Hub centroids */

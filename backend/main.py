@@ -218,6 +218,11 @@ async def lifespan(app: FastAPI):
                         logger.info("Auto-requeued %d unretried tasks from DLQ on startup", requeued_count)
     except Exception as startup_retry_err:
         logger.error("Failed to execute startup DLQ auto-retry: %s", startup_retry_err)
+    # Start background scheduler (skipped in test mode)
+    if settings.ENV != "test" and "pytest" not in sys.modules:
+        from backend.scheduler.scheduler import start_scheduler
+        await start_scheduler(app)
+        logger.info("Recall background scheduler started.")
 
     yield  # ← application runs here
 
@@ -230,6 +235,10 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         logger.info("Recall task worker loop stopped.")
+
+    # Stop background scheduler
+    from backend.scheduler.scheduler import stop_scheduler
+    await stop_scheduler()
 
     from backend.db.connection import close_pool
     await close_pool()
@@ -325,10 +334,12 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 from backend.routes.webhook import router as webhook_router
 from backend.routes.auth import router as auth_router
 from backend.routes.api import router as api_router
+from backend.routes.websocket import router as websocket_router
 
 app.include_router(webhook_router)
 app.include_router(auth_router)
 app.include_router(api_router)
+app.include_router(websocket_router)
 
 @app.get(
     "/health",

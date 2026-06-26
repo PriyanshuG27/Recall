@@ -5,12 +5,15 @@ import './theme.css';
 import './index.css';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { ToastProvider } from './components/Toast.jsx';
+import { SocketProvider } from './context/SocketContext.jsx';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <AuthProvider>
       <ToastProvider>
-        <App />
+        <SocketProvider>
+          <App />
+        </SocketProvider>
       </ToastProvider>
     </AuthProvider>
   </React.StrictMode>,

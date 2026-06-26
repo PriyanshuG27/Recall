@@ -42,7 +42,9 @@ const iconMap = {
   text: <Note size={16} />
 };
 
-export default function Feed({ onNodeClick, onViewInGraph, searchQuery = '' }) {
+const DEFAULT_ACTIVE_NODES = [];
+
+export default function Feed({ onNodeClick, onViewInGraph, searchQuery = '', memberIdsFilter = null, activeNodes = DEFAULT_ACTIVE_NODES, onClearMemberFilter, filterHubLabel = '' }) {
   const { addToast } = useToast();
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(1);
@@ -110,6 +112,36 @@ export default function Feed({ onNodeClick, onViewInGraph, searchQuery = '' }) {
 
   // Fetch items list
   const fetchItems = useCallback(async (pageNum, isReset = false) => {
+    if (memberIdsFilter) {
+      setLoading(true);
+      try {
+        let matched = activeNodes.filter(n => n.id > 0 && memberIdsFilter.includes(n.id));
+        if (sourceType !== 'all') {
+          matched = matched.filter(item => item.source_type === sourceType);
+        }
+        if (tagFilter) {
+          matched = matched.filter(item => item.tags && item.tags.includes(tagFilter));
+        }
+        if (fromDate) {
+          const fDate = new Date(fromDate);
+          matched = matched.filter(item => new Date(item.created_at) >= fDate);
+        }
+        if (toDate) {
+          const tDate = new Date(toDate);
+          matched = matched.filter(item => new Date(item.created_at) <= tDate);
+        }
+        setItems(matched);
+        setTotalPages(1);
+        setHasMore(false);
+      } catch (err) {
+        console.error('Failed to filter items locally:', err);
+      } finally {
+        setLoading(false);
+        setIsFirstLoad(false);
+      }
+      return;
+    }
+
     setLoading(true);
     try {
       if (searchQuery.trim()) {
@@ -184,7 +216,7 @@ export default function Feed({ onNodeClick, onViewInGraph, searchQuery = '' }) {
       setLoading(false);
       setIsFirstLoad(false);
     }
-  }, [sourceType, tagFilter, fromDate, toDate, searchQuery]);
+  }, [sourceType, tagFilter, fromDate, toDate, searchQuery, memberIdsFilter, activeNodes]);
 
   // Reset page and refetch when filters change
   useEffect(() => {
@@ -233,6 +265,30 @@ export default function Feed({ onNodeClick, onViewInGraph, searchQuery = '' }) {
 
   return (
     <div className="feed-view-container">
+      {memberIdsFilter && (
+        <div className="member-filter-banner glass-card" style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '0.75rem 1rem',
+          marginBottom: '1rem',
+          borderRadius: '8px',
+          border: '1px solid var(--color-accent-glow)',
+          background: 'rgba(0, 212, 170, 0.05)',
+          pointerEvents: 'auto'
+        }}>
+          <span style={{ fontSize: '0.875rem', color: 'var(--color-accent)' }}>
+            Showing members of <strong>{filterHubLabel || 'semantic hub'}</strong>
+          </span>
+          <button 
+            className="btn btn-secondary" 
+            onClick={onClearMemberFilter}
+            style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', minHeight: '32px', cursor: 'pointer' }}
+          >
+            Show all
+          </button>
+        </div>
+      )}
       {/* Filter Bar */}
       <div className="filter-bar glass-card">
         <div className="filter-group">

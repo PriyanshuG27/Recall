@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 import httpx
 
 from backend.config import settings
@@ -66,12 +66,18 @@ SUMMARIZE_SYSTEM_PROMPT = (
 )
 
 class AICascade:
-    async def summarise(self, text: str, chat_id: Optional[str] = None) -> Dict[str, Any]:
+    async def summarise(self, text: str, chat_id: Optional[str] = None, task: Optional[str] = None) -> Union[Dict[str, Any], str]:
         """
         Generate a summary and auto-tags for the given text content.
         Uses a cascading fallback structure (Modal -> Groq -> Gemini).
         If ENV is 'test' and no keys are present, returns mock values.
         """
+        import sys
+        if task == "label":
+            if (settings.ENV == "test" or "pytest" in sys.modules) and not getattr(self, "_force_production_llm", False):
+                return "Mock Theme"
+            return await self._run_label_cascade(text)
+
         summary = ""
         tags = []
 
@@ -140,6 +146,61 @@ class AICascade:
                 continue
 
         return ""
+
+    async def _run_label_cascade(self, text: str) -> str:
+        providers = ["groq", "gemini"]
+        if settings.COMPUTE_PROVIDER:
+            if settings.COMPUTE_PROVIDER in providers:
+                providers.remove(settings.COMPUTE_PROVIDER)
+            providers.insert(0, settings.COMPUTE_PROVIDER)
+
+        for provider in providers:
+            try:
+                if provider == "groq" and settings.GROQ_API_KEY:
+                    res = await self._call_groq_label(text)
+                    if res:
+                        res = self._strip_thinking(res).strip().strip('"\'')
+                        logger.info("Label generated successfully via Groq")
+                        return res
+                elif provider == "gemini" and settings.GEMINI_API_KEY:
+                    res = await self._call_gemini_label(text)
+                    if res:
+                        res = self._strip_thinking(res).strip().strip('"\'')
+                        logger.info("Label generated successfully via Gemini")
+                        return res
+            except Exception as e:
+                logger.warning("Label generation failed on provider %s: %s", provider, e)
+                continue
+
+        return "Clustered Items"
+
+    async def _call_groq_label(self, text: str) -> Optional[str]:
+        messages = [
+            {"role": "system", "content": "You are a precise classifier. What single theme connects these items? Answer in 4 words or less. Do not write anything else. Keep your answer brief and descriptive."},
+            {"role": "user", "content": f"Summaries of items:\n\n{text}"}
+        ]
+        return await self._call_groq_llm(messages, temperature=0.2, timeout=10.0)
+
+    async def _call_gemini_label(self, text: str) -> Optional[str]:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={settings.GEMINI_API_KEY}"
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": "You are a precise classifier. What single theme connects these items? Answer in 4 words or less. Do not write anything else. Keep your answer brief and descriptive.\n\nSummaries of items:\n\n" + text}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.2
+            }
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+        return None
 
     async def _call_modal_summary(self, text: str) -> Optional[str]:
         url = "https://pri27--llama-summary.modal.run/summarize"

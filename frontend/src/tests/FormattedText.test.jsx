@@ -68,6 +68,13 @@ describe('FormattedText Component', () => {
     expect(emNode.tagName).toBe('EM');
   });
 
+  it('renders inline code backticks correctly', () => {
+    const text = 'Here is `some code` inline.';
+    const { container } = render(<FormattedText text={text} />);
+    const codeNode = container.querySelector('.code-inline');
+    expect(codeNode).toHaveTextContent('some code');
+  });
+
   it('renders LaTeX math equations correctly', () => {
     const text = 'Math: \\(a^2 + b^2 = c^2\\) and block \\[x = y\\]';
     const { container } = render(<FormattedText text={text} />);
@@ -93,5 +100,22 @@ describe('FormattedText Component', () => {
     const blockMath = container.querySelector('.math-block');
     expect(inlineMath).toHaveTextContent('θ_i = α + ∑_i=1^N β_i');
     expect(blockMath).toHaveTextContent('∫_a^b f(x) dx ≥ 0');
+  });
+
+  it('renders markdown tables correctly including joined divider lines', () => {
+    const text = '| Header 1 | Header 2 |\n|---|---||\n| Value 1 | Value 2 |';
+    const { container } = render(<FormattedText text={text} />);
+    const table = container.querySelector('table');
+    expect(table).toBeInTheDocument();
+    
+    const ths = container.querySelectorAll('th');
+    expect(ths).toHaveLength(2);
+    expect(ths[0]).toHaveTextContent('Header 1');
+    expect(ths[1]).toHaveTextContent('Header 2');
+
+    const tds = container.querySelectorAll('td');
+    expect(tds).toHaveLength(2);
+    expect(tds[0]).toHaveTextContent('Value 1');
+    expect(tds[1]).toHaveTextContent('Value 2');
   });
 });

@@ -7,115 +7,101 @@ import EmptyState from '../components/EmptyState';
 import { GraphSkeleton, FeedCardSkeleton, NodePanelSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
 import ErrorBoundary from '../components/ErrorBoundary';
-import GraphCanvas from '../components/GraphCanvas';
+import GraphCanvas from '../canvas/GraphCanvas';
 import NodePanel from '../components/NodePanel';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
 import KeyboardShortcutsModal from '../components/KeyboardShortcutsModal';
 import SettingsPanel from '../components/SettingsPanel';
 
 function layoutNodes(nodes, edges, hubs) {
-  const width = 1000;
-  const height = 700;
+  const width = 1200;
+  const height = 900;
   const centerX = width / 2;
   const centerY = height / 2;
 
-  const hubSet = new Set(hubs.map(h => h.id));
+  const hubNodes = [];
+  const orbitalNodes = [];
 
-  // Initialize nodes with starting positions (hubs closer to center, orbital nodes in orbit, or random)
-  const layout = nodes.map((node, i) => {
-    const angle = (i / nodes.length) * 2 * Math.PI;
-    const isHub = node.is_hub || hubSet.has(node.id);
-    const radius = isHub ? 80 + Math.random() * 20 : 180 + Math.random() * 40;
-    return {
-      ...node,
-      x: centerX + radius * Math.cos(angle),
-      y: centerY + radius * Math.sin(angle),
-      vx: 0,
-      vy: 0,
-      type: isHub ? 'hub' : 'orbital'
-    };
-  });
-
-  const nodeMap = {};
-  layout.forEach(n => {
-    nodeMap[n.id] = n;
-  });
-
-  // Force simulation parameters (calibrated via scratch_sim.js)
-  const kRepulsion = 600;    // Coulomb-like repulsion constant
-  const kAttraction = 0.05;   // Hooke-like spring constant
-  const gravity = 0.035;      // Pull to center
-  const damping = 0.75;       // Velocity friction
-  const ticks = 150;          // Simulation steps
-
-  for (let step = 0; step < ticks; step++) {
-    // Reset forces for this step
-    layout.forEach(node => {
-      node.fx = 0;
-      node.fy = 0;
-    });
-
-    // 1. Repulsion between all pairs (prevents clustering)
-    for (let i = 0; i < layout.length; i++) {
-      const nodeA = layout[i];
-      for (let j = i + 1; j < layout.length; j++) {
-        const nodeB = layout[j];
-        const dx = nodeA.x - nodeB.x;
-        const dy = nodeA.y - nodeB.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        if (dist < 250) {
-          const force = kRepulsion / dist;
-          const pushX = (dx / dist) * force;
-          const pushY = (dy / dist) * force;
-          nodeA.fx += pushX;
-          nodeA.fy += pushY;
-          nodeB.fx -= pushX;
-          nodeB.fy -= pushY;
-        }
-      }
+  // 1. Categorize nodes
+  nodes.forEach(node => {
+    if (node.id < 0 || node.type === 'hub') {
+      node.type = 'hub';
+      hubNodes.push(node);
+    } else {
+      node.type = 'orbital';
+      orbitalNodes.push(node);
     }
+  });
 
-    // 2. Attraction along edges (pulls connected nodes together)
-    edges.forEach(edge => {
-      const nodeA = nodeMap[edge.source];
-      const nodeB = nodeMap[edge.target];
-      if (nodeA && nodeB) {
-        const dx = nodeA.x - nodeB.x;
-        const dy = nodeA.y - nodeB.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const desiredDist = 70;
-        const force = kAttraction * (dist - desiredDist);
-        const pullX = (dx / dist) * force;
-        const pullY = (dy / dist) * force;
-        nodeA.fx -= pullX;
-        nodeA.fy -= pullY;
-        nodeB.fx += pullX;
-        nodeB.fy += pullY;
-      }
-    });
-
-    // 3. Gravity pulling to center & Update velocities/positions
-    layout.forEach(node => {
-      const dx = centerX - node.x;
-      const dy = centerY - node.y;
-      node.fx += dx * gravity;
-      node.fy += dy * gravity;
-
-      node.vx = (node.vx + node.fx) * damping;
-      node.vy = (node.vy + node.fy) * damping;
-
-      node.x += node.vx;
-      node.y += node.vy;
-    });
+  // Ensure at least one hub if possible
+  if (hubNodes.length === 0 && orbitalNodes.length > 0) {
+    const first = orbitalNodes.shift();
+    first.type = 'hub';
+    hubNodes.push(first);
   }
 
-  // Bound within canvas area to prevent going off-screen
-  layout.forEach(node => {
-    node.x = Math.max(50, Math.min(width - 50, node.x));
-    node.y = Math.max(50, Math.min(height - 50, node.y));
+  // 2. Position hubs in a circle around the center
+  hubNodes.forEach((hub, i) => {
+    const angle = hubNodes.length > 1 ? (i / hubNodes.length) * 2 * Math.PI : 0;
+    const radius = hubNodes.length > 1 ? 250 : 0; // Spread hubs wider apart (250px)
+    hub.x = centerX + radius * Math.cos(angle);
+    hub.y = centerY + radius * Math.sin(angle);
+    hub.vx = 0; hub.vy = 0;
   });
 
-  return layout;
+  // Create a mapping of member item ID to its parent hub node
+  const memberHubMap = {};
+  hubs.forEach(hub => {
+    const hubNodeId = -hub.id;
+    const hubNode = hubNodes.find(hn => hn.id === hubNodeId);
+    if (hubNode && hub.member_ids) {
+      hub.member_ids.forEach(mid => {
+        memberHubMap[mid] = hubNode;
+      });
+    }
+  });
+
+  // 3. Position orbitals: either around their hub or around the center (singletons)
+  const hubMemberIndices = {};
+  let singletonCount = 0;
+
+  orbitalNodes.forEach((node) => {
+    const parentHub = memberHubMap[node.id];
+    if (parentHub) {
+      // Node belongs to a hub. Position in a local Fermat spiral around the hub centroid.
+      const localIndex = hubMemberIndices[parentHub.id] || 0;
+      hubMemberIndices[parentHub.id] = localIndex + 1;
+
+      const localC = 35; // Local spacing factor
+      const n = localIndex + 2; // Offset from centroid core
+      const angle = n * 137.508 * (Math.PI / 180);
+      const radius = localC * Math.sqrt(n);
+
+      node.x = parentHub.x + radius * Math.cos(angle);
+      node.y = parentHub.y + radius * Math.sin(angle);
+    } else {
+      // Node is a singleton. Position in a global spiral around the center.
+      const localIndex = singletonCount;
+      singletonCount++;
+
+      const n = localIndex + 12; // Start outside the central core
+      const angle = n * 137.508 * (Math.PI / 180);
+      const radius = 80 + 25 * Math.sqrt(n);
+
+      node.x = centerX + radius * Math.cos(angle);
+      node.y = centerY + radius * Math.sin(angle);
+    }
+    node.vx = 0;
+    node.vy = 0;
+  });
+
+  // Bound within canvas area to prevent going off-screen
+  nodes.forEach(node => {
+    node.x = Math.max(60, Math.min(width - 60, node.x));
+    node.y = Math.max(60, Math.min(height - 60, node.y));
+  });
+
+  return nodes;
 }
 
 export default function Dashboard() {
@@ -166,7 +152,7 @@ export default function Dashboard() {
       setViewMode('feed');
     },
     onSwitchToGraph: () => {
-      setViewMode('graph');
+      setViewMode('nodes');
     },
     onShowShortcuts: () => {
       setShowShortcutsModal(true);
@@ -175,11 +161,14 @@ export default function Dashboard() {
   const [matchingNodeIds, setMatchingNodeIds] = useState(null);
   const [dueQuizCount, setDueQuizCount] = useState(0);
   const [selectedNode, setSelectedNode] = useState(null);
-  const [viewMode, setViewMode] = useState('graph');
+  const [viewMode, setViewMode] = useState('nodes');
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [hasItems, setHasItems] = useState(false);
   const [loadingNodeDetail, setLoadingNodeDetail] = useState(false);
   const [edges, setEdges] = useState([]);
+  const [hubs, setHubs] = useState([]);
+  const [memberIdsFilter, setMemberIdsFilter] = useState(null);
+  const [filterHubLabel, setFilterHubLabel] = useState('');
 
   // Responsive canvas interaction state
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -211,27 +200,25 @@ export default function Dashboard() {
     zoomRef.current = zoom;
   }, [zoom]);
 
-  // Center the graph on mount/view mode switch
-  useEffect(() => {
-    if (viewMode === 'graph' && canvasRef.current) {
-      const timer = setTimeout(() => {
-        if (canvasRef.current) {
-          const rect = canvasRef.current.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            setPan({
-              x: (rect.width - 1000) / 2,
-              y: (rect.height - 700) / 2
-            });
-          }
-        }
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [viewMode]);
+  // Pan starts at (0,0). GraphCanvas D3 handles all centering internally.
+  // User can drag to pan. No need to offset for a virtual canvas space.
+
 
   const handleViewInGraph = (item) => {
-    setViewMode('graph');
+    setViewMode('nodes');
     setSelectedNode(item);
+  };
+
+  const handleViewAllMembers = (memberIds, hubLabel) => {
+    setMemberIdsFilter(memberIds);
+    setFilterHubLabel(hubLabel);
+    setViewMode('feed');
+    setSelectedNode(null);
+  };
+
+  const handleClearMemberFilter = () => {
+    setMemberIdsFilter(null);
+    setFilterHubLabel('');
   };
 
   const handleNodeClick = (node) => {
@@ -336,6 +323,7 @@ export default function Dashboard() {
         const graphRes = await fetch('/api/graph');
         if (graphRes && graphRes.ok) {
           const graphData = await graphRes.json();
+          setHubs(graphData.hubs || []);
 
           // Build a details lookup map from paginated items
           const detailsMap = {};
@@ -356,29 +344,12 @@ export default function Dashboard() {
             };
           });
 
-          // Build a lookup map of item ID to its hub ID to filter out redundant intra-hub edges
-          const itemHubMap = {};
-          if (graphData.hubs) {
-            graphData.hubs.forEach(hub => {
-              if (hub.member_ids) {
-                hub.member_ids.forEach(mid => {
-                  itemHubMap[mid] = hub.id;
-                });
-              }
-            });
-          }
-
-          // Filter similarity edges: keep only inter-hub or non-hub connections to avoid clutter
-          const filteredSimilarityEdges = (graphData.edges || []).filter(edge => {
-            const sourceHub = itemHubMap[edge.source];
-            const targetHub = itemHubMap[edge.target];
-            return !sourceHub || !targetHub || sourceHub !== targetHub;
-          });
+          // Keep all similarity edges to show proper intra-hub connections
+          const finalEdges = [...(graphData.edges || [])];
 
           // Dynamically construct Hub Centroid Nodes and Hub-to-Member Edges
           const valid_item_ids = new Set(enrichedNodes.map(node => node.id));
           const finalNodes = [...enrichedNodes];
-          const finalEdges = [...filteredSimilarityEdges];
 
           if (graphData.hubs) {
             graphData.hubs.forEach(hub => {
@@ -420,6 +391,22 @@ export default function Dashboard() {
           const positioned = layoutNodes(finalNodes, finalEdges, graphData.hubs || []);
           setActiveNodes(positioned);
           setEdges(finalEdges);
+
+          // Auto-center: compute bounding box of positioned nodes and set initial pan.
+          // Guard: only run when container has a real measured size (not in JSDOM/tests).
+          if (positioned.length > 0 && canvasRef.current) {
+            const rect = canvasRef.current.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              const xs = positioned.map(n => n.x).filter(v => v !== undefined && !isNaN(v));
+              const ys = positioned.map(n => n.y).filter(v => v !== undefined && !isNaN(v));
+              if (xs.length > 0) {
+                const layoutCx = (Math.min(...xs) + Math.max(...xs)) / 2;
+                const layoutCy = (Math.min(...ys) + Math.max(...ys)) / 2;
+                setPan({ x: rect.width / 2 - layoutCx, y: rect.height / 2 - layoutCy });
+              }
+            }
+          }
+
         }
       } else {
         setActiveNodes([]);
@@ -771,7 +758,7 @@ export default function Dashboard() {
 
       {/* Main Canvas View Area / Skeletons / Empty States */}
       {isFirstLoad ? (
-        viewMode === 'graph' ? (
+        (viewMode === 'nodes' || viewMode === 'hubs') ? (
           <div className="graph-canvas-container" style={{ padding: '2rem' }}>
             <GraphSkeleton />
           </div>
@@ -790,7 +777,7 @@ export default function Dashboard() {
           </div>
           <EmptyState variant="graph" />
         </>
-      ) : viewMode === 'graph' ? (
+      ) : (viewMode === 'nodes' || viewMode === 'hubs') ? (
         <div className="graph-canvas-container" ref={canvasRef} style={{ overflow: 'hidden' }}>
           {/* Placeholder welcome message required by Dashboard.test.jsx */}
           <div style={{ display: 'none' }}>
@@ -811,6 +798,8 @@ export default function Dashboard() {
                 zoom={zoom}
                 handleNodeClick={handleNodeClick}
                 selectedNodeId={selectedNode ? selectedNode.id : null}
+                mode={viewMode === 'hubs' ? 'hubs' : 'nodes'}
+                hubs={hubs}
               />
             </ErrorBoundary>
           )}
@@ -892,6 +881,10 @@ export default function Dashboard() {
               onNodeClick={handleNodeClick} 
               onViewInGraph={handleViewInGraph} 
               searchQuery={searchQuery}
+              memberIdsFilter={memberIdsFilter}
+              activeNodes={activeNodes}
+              onClearMemberFilter={handleClearMemberFilter}
+              filterHubLabel={filterHubLabel}
             />
           </ErrorBoundary>
         </>
@@ -902,12 +895,15 @@ export default function Dashboard() {
       {/* Selected Node side detail panel */}
       <ErrorBoundary>
         <NodePanel
-          selectedNode={selectedNode}
+          node={selectedNode}
           loadingNodeDetail={loadingNodeDetail}
           onClose={() => {
             setSelectedNode(null);
             setLoadingNodeDetail(false);
           }}
+          hubs={hubs}
+          activeNodes={activeNodes}
+          onViewAllMembers={handleViewAllMembers}
         />
       </ErrorBoundary>
 

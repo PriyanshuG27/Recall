@@ -123,76 +123,7 @@ function App() {
     };
   }, [addToast, removeToast]);
 
-  useEffect(() => {
-    if (!user) return;
 
-    let socket;
-    let reconnectTimeout;
-    let didError = false;
-
-    function connect() {
-      if (!navigator.onLine) return;
-
-      try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/api/ws`;
-        socket = new WebSocket(wsUrl);
-
-        socket.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'new_node') {
-              addToast(`✓ Saved ${data.source_type}!`, 'success');
-            } else if (data.type === 'google_connected') {
-              addToast('Google Drive connected!', 'success');
-            }
-          } catch (err) {
-            console.error('Failed to parse WebSocket message:', err);
-          }
-        };
-
-        socket.onerror = () => {
-          if (navigator.onLine && !didError) {
-            addToast('Connection error — retrying...', 'error');
-            didError = true;
-          }
-        };
-
-        socket.onclose = () => {
-          if (navigator.onLine) {
-            reconnectTimeout = setTimeout(() => {
-              connect();
-            }, 3000);
-          }
-        };
-
-        socket.onopen = () => {
-          didError = false;
-        };
-      } catch (err) {
-        console.error('WebSocket connection failed:', err);
-      }
-    }
-
-    const handleOnline = () => {
-      if (!socket || socket.readyState === WebSocket.CLOSED) {
-        connect();
-      }
-    };
-
-    window.addEventListener('online', handleOnline);
-
-    connect();
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      if (socket) {
-        socket.onclose = null;
-        socket.close();
-      }
-      clearTimeout(reconnectTimeout);
-    };
-  }, [user, addToast]);
 
   if (loading) {
     return (
