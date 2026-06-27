@@ -28,25 +28,26 @@ class MockRedisRateLimitState:
     def __init__(self):
         self.state = {}
 
-    async def pipeline(self, commands):
-        key = commands[0][1]
+    async def eval(self, script, numkeys, *args):
+        key = args[0]
+        now = int(args[1])
+        window_start = int(args[2])
+        member_id = args[3]
+        limit = int(args[5])
+        
         if key not in self.state:
             self.state[key] = []
             
-        now = int(commands[1][2])
-        window_start = int(commands[0][3])
-        
-        # 1. ZREMRANGEBYSCORE key 0 window_start
+        # ZREMRANGEBYSCORE key 0 window_start
         self.state[key] = [t for t in self.state[key] if t > window_start]
         
-        # 2. ZADD key now member_id
+        # ZADD key now member_id
         self.state[key].append(now)
         self.state[key].sort()
         
         card = len(self.state[key])
         oldest_member = f"{self.state[key][0]}-mockuuid"
-        
-        return [0, 1, card, 1, [oldest_member]]
+        return [card, oldest_member]
 
 
 class DummyCursor:
@@ -105,18 +106,18 @@ def get_auth_token(user_id=42):
 
 def test_exempt_routes(client):
     # /auth/telegram (and auth routes generally) should not trigger rate limit checks.
-    with mock.patch("backend.services.redis_client.redis.pipeline") as mock_pipeline:
+    with mock.patch("backend.services.redis_client.redis.eval") as mock_eval:
         resp = client.get("/health")
         assert resp.status_code == 200
         client.get("/auth/telegram")
-        assert not mock_pipeline.called
+        assert not mock_eval.called
 
 
 def test_rate_limit_exceeded_response(client):
     token = get_auth_token(user_id=42)
     db_state = MockRedisRateLimitState()
     
-    with mock.patch("backend.services.redis_client.redis.pipeline", side_effect=db_state.pipeline):
+    with mock.patch("backend.services.redis_client.redis.eval", side_effect=db_state.eval):
         # POST /api/search limit = 60
         for _ in range(60):
             resp = client.post("/api/search", json={"query": "test"}, cookies={"recall_session": token})
@@ -139,7 +140,7 @@ def test_different_limits_search_vs_sync(client):
     token = get_auth_token(user_id=42)
     db_state = MockRedisRateLimitState()
     
-    with mock.patch("backend.services.redis_client.redis.pipeline", side_effect=db_state.pipeline), \
+    with mock.patch("backend.services.redis_client.redis.eval", side_effect=db_state.eval), \
          mock.patch("backend.services.drive_sync.sync_user_to_drive", new_callable=mock.AsyncMock) as mock_sync:
         # drive/sync has limit = 5 per hour
         for _ in range(5):

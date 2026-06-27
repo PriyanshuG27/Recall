@@ -8,7 +8,7 @@ and strict token redaction in logs/exceptions.
 
 import asyncio
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -169,6 +169,14 @@ class UpstashRedis:
             raise RedisUnavailableError(self._redact(data["error"]))
         # Upstash REST returns the list inside the 'result' field
         return data.get("result", [])
+
+    async def eval(self, script: str, numkeys: int, *args) -> Optional[Union[dict, list, str, int]]:
+        """Execute a Lua script on the Redis server."""
+        payload = ["EVAL", script, str(numkeys)] + list(args)
+        data = await self._request("", payload)
+        if isinstance(data, dict) and "error" in data:
+            raise RedisUnavailableError(self._redact(data["error"]))
+        return data.get("result")
 
     async def ping(self) -> bool:
         """Checks liveness of the Upstash Redis instance. Returns True if responsive."""

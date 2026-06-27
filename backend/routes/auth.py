@@ -178,6 +178,8 @@ async def auth_me(
         row = await cur.fetchone()
     has_drive = row is not None and row[0] is not None
     google_last_sync = row[1] if row else None
+    if google_last_sync and google_last_sync.tzinfo is None:
+        google_last_sync = google_last_sync.replace(tzinfo=timezone.utc)
     token = request.cookies.get("jwt") or request.cookies.get("recall_session")
     return {
         "status": "ok",

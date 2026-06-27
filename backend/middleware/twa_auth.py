@@ -147,7 +147,7 @@ async def get_twa_user(
     if not row:
         raise HTTPException(status_code=401, detail="Not authenticated")
         
-    return UserContext(id=row[0], telegram_chat_id=row[1])
+    return UserContext(id=row[0], telegram_chat_id=str(row[1]))
 
 
 async def get_jwt_user(
@@ -207,7 +207,7 @@ async def get_jwt_user(
                 max_age=7 * 86400
             )
             
-    return UserContext(id=row[0], telegram_chat_id=row[1])
+    return UserContext(id=row[0], telegram_chat_id=str(row[1]))
 
 
 async def get_current_user(

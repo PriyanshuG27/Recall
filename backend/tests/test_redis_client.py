@@ -68,6 +68,22 @@ async def test_redis_pipeline_format():
         # Verify the pipeline endpoint and JSON format are correct
         mock_post.assert_called_once_with("pipeline", json=commands)
 
+
+@pytest.mark.asyncio
+async def test_redis_eval():
+    mock_resp = mock.Mock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"result": ["val1", "val2"]}
+    
+    with mock.patch("httpx.AsyncClient.post", new_callable=mock.AsyncMock) as mock_post:
+        mock_post.return_value = mock_resp
+        
+        script = "return {KEYS[1], ARGV[1]}"
+        res = await redis.eval(script, 1, "k1", "a1")
+        assert res == ["val1", "val2"]
+        
+        mock_post.assert_called_once_with("", json=["EVAL", script, "1", "k1", "a1"])
+
 @pytest.mark.asyncio
 async def test_redis_ping():
     mock_resp = mock.Mock()

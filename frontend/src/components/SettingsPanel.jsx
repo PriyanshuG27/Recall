@@ -20,6 +20,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
   });
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Fetch settings on open
   useEffect(() => {
@@ -150,6 +151,54 @@ export default function SettingsPanel({ isOpen, onClose }) {
     }
   };
 
+  const handleExportData = async () => {
+    setExporting(true);
+    try {
+      const response = await axios.get('/api/export', {
+        responseType: 'blob'
+      });
+      
+      let filename = `recall-export-${new Date().toISOString().split('T')[0]}.json`;
+      const disposition = response.headers['content-disposition'];
+      if (disposition && disposition.indexOf('attachment') !== -1) {
+        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+        const matches = filenameRegex.exec(disposition);
+        if (matches != null && matches[1]) { 
+          filename = matches[1].replace(/['"]/g, '');
+        }
+      }
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      addToast('Data export downloaded successfully', 'success');
+    } catch (err) {
+      console.error('Failed to export data:', err);
+      if (err.response && err.response.status === 429) {
+        try {
+          const text = await err.response.data.text();
+          const parsed = JSON.parse(text);
+          if (parsed.error === 'rate_limit_exceeded') {
+            const hours = Math.ceil(parsed.retry_after / 3600);
+            addToast(`Export limit exceeded. Please try again in ${hours} hour${hours > 1 ? 's' : ''}.`, 'error');
+            return;
+          }
+        } catch (parseErr) {
+          // Fallback
+        }
+        addToast('Export limit exceeded (1 per 24 hours). Please try again later.', 'error');
+      } else {
+        addToast('Failed to export data. Please try again.', 'error');
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const rawOffsets = [];
   for (let h = -12; h <= 14; h++) {
     rawOffsets.push(h);
@@ -250,6 +299,30 @@ export default function SettingsPanel({ isOpen, onClose }) {
 
           {/* Google Drive Connection Card */}
           <ConnectDriveCard />
+
+          {/* GDPR Data Portability */}
+          <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-glass)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <h4 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text)' }}>Export Data (GDPR)</h4>
+            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+              Download all your saved items, profile statistics, reminders, and quiz schedules in standard, portable JSON format.
+            </p>
+            <button
+              onClick={handleExportData}
+              disabled={exporting}
+              className="btn btn-primary"
+              style={{
+                width: '100%',
+                minHeight: '40px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                fontSize: '0.875rem'
+              }}
+            >
+              {exporting ? 'Exporting...' : 'Export My Data (JSON)'}
+            </button>
+          </div>
 
           {/* Danger Zone */}
           <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem', marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>

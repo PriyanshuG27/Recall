@@ -1447,6 +1447,197 @@ async def delete_user_me(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.get(
+    "/export",
+    tags=["profile"],
+    summary="Export user data (GDPR)",
+    description="Streams all user-owned data (profile info, decrypted items, reminders, and quizzes) as a JSON file.",
+    responses={
+        401: {"model": ErrorResponse},
+        429: {"model": ErrorResponse, "description": "Export rate limit exceeded (1 export per 24 hours)."},
+    },
+    dependencies=[Depends(rate_limit("export", 1, 86400))],
+)
+async def export_user_data(
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db)
+):
+    from fastapi.responses import StreamingResponse
+    import json
+    from datetime import datetime, timezone
+
+    async def export_generator():
+        # 1. Fetch user profile
+        async with db.cursor() as cur:
+            await cur.execute(
+                "SELECT telegram_chat_id, streak_count, timezone_offset, created_at FROM users WHERE id = %s;",
+                (user.id,)
+            )
+            user_row = await cur.fetchone()
+            
+        if not user_row:
+            yield "{}"
+            return
+
+        user_data = {
+            "telegram_chat_id": user_row[0],
+            "streak_count": user_row[1],
+            "timezone_offset": user_row[2],
+            "created_at": user_row[3].isoformat() if user_row[3] else None
+        }
+
+        export_date = datetime.now(timezone.utc).isoformat()
+        
+        # Start main JSON document and user profile info
+        yield '{\n  "export_date": "%s",\n  "user": %s,\n  "items": [' % (
+            export_date,
+            json.dumps(user_data, indent=4).replace("\n", "\n  ")
+        )
+
+        # 2. Query and stream items
+        item_count = 0
+        first_item = True
+        
+        async with db.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, source_type, source_url, raw_text, summary, title, tags, created_at
+                FROM items
+                WHERE user_id = %s
+                ORDER BY created_at DESC;
+                """,
+                (user.id,)
+            )
+            async for row in cur:
+                item_id, source_type, source_url, raw_text, summary, title, tags, created_at = row
+                
+                # Decrypt raw_text
+                raw_text_decrypted = None
+                if raw_text:
+                    try:
+                        from backend.services.encryption import decrypt
+                        raw_text_decrypted = decrypt(raw_text)
+                    except Exception:
+                        raw_text_decrypted = "[Decryption Failed]"
+
+                item_dict = {
+                    "id": item_id,
+                    "source_type": source_type,
+                    "source_url": source_url,
+                    "raw_text_decrypted": raw_text_decrypted,
+                    "summary": summary,
+                    "title": title,
+                    "tags": tags or [],
+                    "created_at": created_at.isoformat() if created_at else None
+                }
+
+                item_json = json.dumps(item_dict, indent=4).replace("\n", "\n    ")
+                
+                if not first_item:
+                    yield ",\n    " + item_json
+                else:
+                    yield "\n    " + item_json
+                    first_item = False
+                
+                item_count += 1
+
+        # Close items array and start reminders array
+        yield '\n  ],\n  "reminders": ['
+
+        # 3. Query and stream reminders
+        first_reminder = True
+        async with db.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, item_id, message, remind_at, status, created_at
+                FROM reminders
+                WHERE user_id = %s
+                ORDER BY remind_at DESC;
+                """,
+                (user.id,)
+            )
+            async for row in cur:
+                rem_id, rem_item_id, message, remind_at, status, created_at = row
+                rem_dict = {
+                    "id": rem_id,
+                    "item_id": rem_item_id,
+                    "message": message,
+                    "remind_at": remind_at.isoformat() if remind_at else None,
+                    "status": status,
+                    "created_at": created_at.isoformat() if created_at else None
+                }
+
+                rem_json = json.dumps(rem_dict, indent=4).replace("\n", "\n    ")
+                
+                if not first_reminder:
+                    yield ",\n    " + rem_json
+                else:
+                    yield "\n    " + rem_json
+                    first_reminder = False
+
+        # Close reminders array and start quizzes array
+        yield '\n  ],\n  "quizzes": ['
+
+        # 4. Query and stream quizzes
+        first_quiz = True
+        async with db.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, item_id, question, options, correct_index, explanation, ease_factor, interval_days, next_review, created_at
+                FROM quizzes
+                WHERE user_id = %s
+                ORDER BY created_at DESC;
+                """,
+                (user.id,)
+            )
+            async for row in cur:
+                q_id, q_item_id, question, options, correct_index, explanation, ease_factor, interval_days, next_review, created_at = row
+                from datetime import date
+                q_dict = {
+                    "id": q_id,
+                    "item_id": q_item_id,
+                    "question": question,
+                    "options": options,
+                    "correct_index": correct_index,
+                    "explanation": explanation,
+                    "ease_factor": ease_factor,
+                    "interval_days": interval_days,
+                    "next_review": next_review.isoformat() if isinstance(next_review, (datetime, date)) else str(next_review) if next_review else None,
+                    "created_at": created_at.isoformat() if created_at else None
+                }
+
+                q_json = json.dumps(q_dict, indent=4).replace("\n", "\n    ")
+                
+                if not first_quiz:
+                    yield ",\n    " + q_json
+                else:
+                    yield "\n    " + q_json
+                    first_quiz = False
+
+        # Close quizzes array and document
+        yield '\n  ]\n}'
+        
+        # Structured audit log containing user_id, export_date, and item_count ONLY
+        logger.info(
+            "Audit Log - Export completed: user_id=%d, export_date=%s, item_count=%d",
+            user.id,
+            export_date,
+            item_count
+        )
+
+    # Format Content-Disposition header with current date
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    headers = {
+        "Content-Disposition": f'attachment; filename="recall-export-{date_str}.json"'
+    }
+
+    return StreamingResponse(
+        export_generator(),
+        media_type="application/json",
+        headers=headers
+    )
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     jwt_cookie = websocket.cookies.get("recall_session") or websocket.cookies.get("jwt")

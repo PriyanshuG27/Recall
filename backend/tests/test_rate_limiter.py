@@ -9,33 +9,32 @@ class MockRedisRateLimitState:
         # Maps key -> list of timestamps (int ms)
         self.state = {}
 
-    async def pipeline(self, commands):
-        key = commands[0][1]
+    async def eval(self, script, numkeys, *args):
+        key = args[0]
+        now = int(args[1])
+        window_start = int(args[2])
+        member_id = args[3]
+        limit = int(args[5])
+        
         if key not in self.state:
             self.state[key] = []
             
-        now = int(commands[1][2])
-        window_start = int(commands[0][3])
-        
-        # 1. ZREMRANGEBYSCORE key 0 window_start
+        # ZREMRANGEBYSCORE key 0 window_start
         self.state[key] = [t for t in self.state[key] if t > window_start]
         
-        # 2. ZADD key now member_id
+        # ZADD key now member_id
         self.state[key].append(now)
         self.state[key].sort()
         
-        # 3. ZCARD key
         card = len(self.state[key])
         
-        # 5. ZRANGE key 0 0
         oldest_member = f"{self.state[key][0]}-mockuuid"
-        
-        return [0, 1, card, 1, [oldest_member]]
+        return [card, oldest_member]
 
 @pytest.mark.asyncio
 async def test_rate_limiter_under_limit():
     db_state = MockRedisRateLimitState()
-    with mock.patch("backend.services.redis_client.redis.pipeline", side_effect=db_state.pipeline):
+    with mock.patch("backend.services.redis_client.redis.eval", side_effect=db_state.eval):
         # 20 requests in the same minute should all pass
         current_time = 1719270000.0  # ms: 1719270000000
         for i in range(20):
@@ -48,7 +47,7 @@ async def test_rate_limiter_under_limit():
 @pytest.mark.asyncio
 async def test_rate_limiter_over_limit():
     db_state = MockRedisRateLimitState()
-    with mock.patch("backend.services.redis_client.redis.pipeline", side_effect=db_state.pipeline):
+    with mock.patch("backend.services.redis_client.redis.eval", side_effect=db_state.eval):
         current_time = 1719270000.0  # ms: 1719270000000
         
         # Send 20 requests
@@ -65,7 +64,7 @@ async def test_rate_limiter_over_limit():
 @pytest.mark.asyncio
 async def test_rate_limiter_window_expiry():
     db_state = MockRedisRateLimitState()
-    with mock.patch("backend.services.redis_client.redis.pipeline", side_effect=db_state.pipeline):
+    with mock.patch("backend.services.redis_client.redis.eval", side_effect=db_state.eval):
         start_time = 1719270000.0  # ms: 1719270000000
         
         # Send 20 requests at start_time
@@ -85,7 +84,7 @@ async def test_rate_limiter_window_expiry():
 @pytest.mark.asyncio
 async def test_rate_limiter_different_users():
     db_state = MockRedisRateLimitState()
-    with mock.patch("backend.services.redis_client.redis.pipeline", side_effect=db_state.pipeline):
+    with mock.patch("backend.services.redis_client.redis.eval", side_effect=db_state.eval):
         current_time = 1719270000.0
         
         # 20 requests from user A

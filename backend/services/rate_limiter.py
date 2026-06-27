@@ -21,6 +21,31 @@ class RateLimitExceeded(Exception):
         super().__init__(f"Rate limit exceeded. Retry after {retry_after:.1f} seconds.")
 
 
+RATE_LIMIT_LUA = """
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window_start = tonumber(ARGV[2])
+local member_id = ARGV[3]
+local expire_seconds = tonumber(ARGV[4])
+local limit = tonumber(ARGV[5])
+
+redis.call("ZREMRANGEBYSCORE", key, 0, window_start)
+redis.call("ZADD", key, now, member_id)
+local count = redis.call("ZCARD", key)
+redis.call("EXPIRE", key, expire_seconds)
+
+local oldest = ""
+if count > limit then
+    local oldest_list = redis.call("ZRANGE", key, 0, 0)
+    if oldest_list and #oldest_list > 0 then
+        oldest = oldest_list[1]
+    end
+end
+
+return {count, oldest}
+"""
+
+
 async def check_rate_limit(
     user_id: Union[int, str],
     key_prefix: str = "webhook",
@@ -41,26 +66,31 @@ async def check_rate_limit(
     
     # Member format: {timestamp_ms}-{uuid} to ensure uniqueness of every request
     member_id = f"{now}-{uuid.uuid4()}"
-    
-    commands = [
-        ["ZREMRANGEBYSCORE", key, "0", str(window_start)],
-        ["ZADD", key, str(now), member_id],
-        ["ZCARD", key],
-        ["EXPIRE", key, str(window_seconds + 1)],
-        ["ZRANGE", key, "0", "0"]
-    ]
+    expire_seconds = window_seconds + 1
     
     try:
-        results = await redis.pipeline(commands)
-        count = int(results[2])
+        results = await redis.eval(
+            RATE_LIMIT_LUA,
+            1,
+            key,
+            str(now),
+            str(window_start),
+            member_id,
+            str(expire_seconds),
+            str(limit)
+        )
+        if not results or len(results) < 2:
+            return
+            
+        count = int(results[0])
+        oldest_member = results[1]
         
         if count > limit:
-            oldest_member_list = results[4]
             oldest_score = now  # Fallback
             
-            if oldest_member_list and len(oldest_member_list) > 0:
+            if oldest_member:
                 try:
-                    oldest_score = int(oldest_member_list[0].split("-")[0])
+                    oldest_score = int(oldest_member.split("-")[0])
                 except Exception:
                     pass
                     
