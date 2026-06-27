@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone, time
 from typing import Optional, Tuple
 from psycopg import AsyncConnection
+from backend.services.redis_client import redis
 
 logger = logging.getLogger(__name__)
 
@@ -113,5 +114,13 @@ async def create_reminder(
         if not insert_row:
             raise RuntimeError("Failed to persist reminder.")
         reminder_id = insert_row[0]
+        
+        # 4. Add to Redis sorted set for scheduling
+        score = int(remind_at_utc.timestamp())
+        try:
+            await redis.zadd("reminders:active", score, str(reminder_id))
+        except Exception as e:
+            logger.error("Failed to add reminder %d to Redis zset: %s", reminder_id, e)
+            raise RuntimeError(f"Failed to schedule reminder in Redis: {e}") from e
         
     return reminder_id, message, was_truncated

@@ -98,13 +98,15 @@ def test_disconnect_drive_success(client, mock_db_connection):
     assert len(update_queries) == 1
 
 def test_sync_drive_success(client, mock_db_connection):
-    """POST /api/drive/sync triggers sync and returns 202."""
+    """POST /api/drive/sync triggers sync and returns 200."""
     payload = {"sub": "42", "chat_id": "123456789"}
     token = generate_jwt(payload, settings.JWT_SECRET)
     
-    resp = client.post("/api/drive/sync", cookies={"recall_session": token})
-    assert resp.status_code == 202
-    assert resp.json() == {"status": "ok"}
+    with mock.patch("backend.services.drive_sync.sync_user_to_drive") as mock_sync:
+        resp = client.post("/api/drive/sync", cookies={"recall_session": token})
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+        mock_sync.assert_called_once()
 
 @pytest.mark.anyio
 async def test_run_google_drive_sync_success(monkeypatch):

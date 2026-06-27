@@ -96,7 +96,12 @@ async def test_reminders_dispatcher_success():
     mock_pool = mock.MagicMock()
     mock_pool.connection = mock.MagicMock(return_value=conn)
     
+    mock_redis = mock.AsyncMock()
+    mock_redis.zrangebyscore.return_value = ["101"]
+    mock_redis.zrem.return_value = 1
+    
     with mock.patch("backend.scheduler.scheduler._pool", mock_pool), \
+         mock.patch("backend.scheduler.scheduler.redis", mock_redis), \
          mock.patch("backend.scheduler.scheduler.send_telegram_message", new_callable=mock.AsyncMock) as mock_send:
         
         mock_send.return_value = True
@@ -119,6 +124,9 @@ async def test_reminders_dispatcher_success():
         assert "reminders" in update_query.lower()
         assert "status" in update_query.lower()
         assert params == ("sent", 101)
+        
+        mock_redis.zrangebyscore.assert_called_once()
+        mock_redis.zrem.assert_called_once_with("reminders:active", "101")
 
 
 @pytest.mark.asyncio
@@ -129,7 +137,12 @@ async def test_reminders_dispatcher_failure():
     mock_pool = mock.MagicMock()
     mock_pool.connection = mock.MagicMock(return_value=conn)
     
+    mock_redis = mock.AsyncMock()
+    mock_redis.zrangebyscore.return_value = ["202"]
+    mock_redis.zrem.return_value = 1
+    
     with mock.patch("backend.scheduler.scheduler._pool", mock_pool), \
+         mock.patch("backend.scheduler.scheduler.redis", mock_redis), \
          mock.patch("backend.scheduler.scheduler.send_telegram_message", new_callable=mock.AsyncMock) as mock_send:
         
         mock_send.return_value = False  # Simulate Telegram failure
@@ -143,6 +156,9 @@ async def test_reminders_dispatcher_failure():
         assert len(cursor.executed) == 2
         update_query, params = cursor.executed[1]
         assert params == ("failed", 202)
+        
+        mock_redis.zrangebyscore.assert_called_once()
+        mock_redis.zrem.assert_called_once_with("reminders:active", "202")
 
 
 @pytest.mark.asyncio
@@ -265,7 +281,11 @@ async def test_scheduler_resilience_on_exception():
     # Force connection error to throw an exception
     mock_pool.connection.side_effect = Exception("DB Connection Refused")
     
-    with mock.patch("backend.scheduler.scheduler._pool", mock_pool):
+    mock_redis = mock.AsyncMock()
+    mock_redis.zrangebyscore.return_value = []
+    
+    with mock.patch("backend.scheduler.scheduler._pool", mock_pool), \
+         mock.patch("backend.scheduler.scheduler.redis", mock_redis):
         # Triggering a job with a forced exception should be caught and logged
         # and NOT bubble up/crash the thread
         await processed_updates_cleanup()

@@ -92,9 +92,23 @@ async def _perform_db_hubs_swap(cur, user_id: int, hubs_to_insert: List[Dict[str
 async def reminders_dispatcher() -> None:
     """
     Background job to deliver pending reminders to users via Telegram Bot API.
-    Runs every 1 minute.
+    Uses Redis Sorted Set for scheduling:
+    1. Queries Redis zset 'reminders:active' for due IDs.
+    2. If empty, exits immediately without touching the PostgreSQL pool (Neon autosuspend).
+    3. If not empty, checks out database connection, updates statuses, and dispatches.
     """
+    import time
     try:
+        now_epoch = int(time.time())
+        due_ids_str = await redis.zrangebyscore("reminders:active", "-inf", str(now_epoch))
+        if not due_ids_str:
+            return
+
+        due_ids = [int(x) for x in due_ids_str if x.isdigit()]
+        if not due_ids:
+            return
+
+        logger.info("Found %d pending reminders in Redis to dispatch.", len(due_ids))
         pool = await get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
@@ -103,16 +117,19 @@ async def reminders_dispatcher() -> None:
                     SELECT r.id, r.message, u.telegram_chat_id
                     FROM reminders r
                     JOIN users u ON r.user_id = u.id
-                    WHERE r.remind_at <= NOW()
-                      AND r.status = 'pending'
-                    LIMIT 50;
-                    """
+                    WHERE r.id = ANY(%s) AND r.status = 'pending';
+                    """,
+                    (due_ids,)
                 )
                 rows = await cur.fetchall()
+                
+                # Remove all checked due IDs from Redis immediately to prevent loopups
+                for rem_id in due_ids:
+                    await redis.zrem("reminders:active", str(rem_id))
+                    
                 if not rows:
                     return
 
-                logger.info("Found %d pending reminders to dispatch.", len(rows))
                 for row in rows:
                     rem_id, message, chat_id = row
                     formatted_msg = f"🔔 Reminder:\n\n{message}"
@@ -556,6 +573,47 @@ async def daily_digest_sender() -> None:
         logger.error("daily_digest_sender job failed: %s", e, exc_info=True)
 
 
+async def weekly_drive_sync() -> None:
+    """
+    Background job to run the weekly Google Drive synchronization for all users.
+    Only processes users with a connected Google Drive account (google_refresh_token IS NOT NULL).
+    Runs weekly on Sunday at 04:00 UTC.
+    """
+    try:
+        pool = await get_pool()
+        users_to_sync = []
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT id FROM users WHERE google_refresh_token IS NOT NULL;"
+                )
+                users_to_sync = [row[0] for row in await cur.fetchall()]
+        
+        if not users_to_sync:
+            logger.info("No users found with connected Google Drive for weekly sync.")
+            return
+
+        logger.info("Found %d users with connected Google Drive for weekly sync.", len(users_to_sync))
+        
+        from backend.services.drive_sync import sync_user_to_drive
+        
+        for user_id in users_to_sync:
+            try:
+                # Open a connection for each user sync to keep operations transactional and isolated
+                async with pool.connection() as conn:
+                    await sync_user_to_drive(user_id, conn)
+            except Exception as user_err:
+                logger.error(
+                    "Weekly Google Drive sync failed for user %d: %s",
+                    user_id,
+                    user_err,
+                    exc_info=True
+                )
+                
+    except Exception as e:
+        logger.error("weekly_drive_sync background job failed: %s", e, exc_info=True)
+
+
 # ---------------------------------------------------------------------------
 # Scheduler Manager
 # ---------------------------------------------------------------------------
@@ -616,8 +674,16 @@ async def start_scheduler(app=None) -> None:
         misfire_grace_time=3600
     )
     
+    # 7. weekly_drive_sync (weekly on Sunday at 04:00 UTC)
+    _scheduler.add_job(
+        weekly_drive_sync,
+        trigger=CronTrigger(day_of_week="sun", hour=4, minute=0, timezone="UTC"),
+        id="weekly_drive_sync",
+        misfire_grace_time=60
+    )
+    
     _scheduler.start()
-    logger.info("Background job scheduler started successfully with all 6 jobs.")
+    logger.info("Background job scheduler started successfully with all 7 jobs.")
 
 
 async def stop_scheduler() -> None:

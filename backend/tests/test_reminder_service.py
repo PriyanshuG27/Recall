@@ -1,6 +1,12 @@
 import pytest
 from datetime import datetime, timedelta, timezone, date, time
 from backend.services.reminder_service import parse_time_expression, create_reminder
+from unittest import mock
+
+@pytest.fixture(autouse=True)
+def mock_redis_service():
+    with mock.patch("backend.services.reminder_service.redis", new_callable=mock.AsyncMock) as m:
+        yield m
 
 class MockDbState:
     def __init__(self, active_count=0):

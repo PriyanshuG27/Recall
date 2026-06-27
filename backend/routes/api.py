@@ -942,6 +942,13 @@ async def delete_reminder(
             detail="Reminder not found."
         )
         
+    # Remove from Redis sorted set
+    from backend.services.redis_client import redis
+    try:
+        await redis.zrem("reminders:active", str(id))
+    except Exception as e:
+        logger.warning("Failed to remove deleted reminder %d from Redis active zset: %s", id, e)
+        
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 # ---------------------------------------------------------------------------
@@ -949,10 +956,10 @@ async def delete_reminder(
 # ---------------------------------------------------------------------------
 @router.post(
     "/drive/sync",
-    status_code=status.HTTP_202_ACCEPTED,
+    status_code=status.HTTP_200_OK,
     tags=["drive"],
     summary="Sync Google Drive",
-    description="Triggers a background synchronization of Recall items to Google Drive as a unified doc.",
+    description="Triggers a synchronization of Recall items to Google Drive as a Google Doc.",
     responses={
         401: {"model": ErrorResponse},
         429: {"model": ErrorResponse, "description": "Sync limit exceeded (max 5 requests per hour)."},
@@ -960,13 +967,13 @@ async def delete_reminder(
     dependencies=[Depends(rate_limit("sync", 5, 3600))],
 )
 async def sync_drive(
-    background_tasks: BackgroundTasks,
-    user: UserContext = Depends(get_current_user)
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db)
 ):
     """Sync items to Google Drive."""
-    from backend.services.google_drive import run_google_drive_sync
-    background_tasks.add_task(run_google_drive_sync, user.id)
-    return {"status": "ok"}
+    from backend.services.drive_sync import sync_user_to_drive
+    await sync_user_to_drive(user.id, db)
+    return {"status": "ok", "message": "Google Drive synchronization completed successfully."}
 
 @router.delete(
     "/drive",

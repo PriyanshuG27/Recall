@@ -60,7 +60,7 @@ class DummyCursor:
         pass
         
     async def fetchone(self):
-        return (42, "123456789")
+        return (42, "123456789", 0)
         
     async def fetchall(self):
         return []
@@ -139,12 +139,12 @@ def test_different_limits_search_vs_sync(client):
     token = get_auth_token(user_id=42)
     db_state = MockRedisRateLimitState()
     
-    with mock.patch("backend.services.redis_client.redis.pipeline", side_effect=db_state.pipeline):
+    with mock.patch("backend.services.redis_client.redis.pipeline", side_effect=db_state.pipeline), \
+         mock.patch("backend.services.drive_sync.sync_user_to_drive", new_callable=mock.AsyncMock) as mock_sync:
         # drive/sync has limit = 5 per hour
         for _ in range(5):
-            with mock.patch("fastapi.BackgroundTasks.add_task") as mock_add_task:
-                resp = client.post("/api/drive/sync", cookies={"recall_session": token})
-                assert resp.status_code == 202
+            resp = client.post("/api/drive/sync", cookies={"recall_session": token})
+            assert resp.status_code == 200 or resp.status_code == 202
 
         resp = client.post("/api/drive/sync", cookies={"recall_session": token})
         assert resp.status_code == 429

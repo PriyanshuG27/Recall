@@ -148,6 +148,28 @@ class UpstashRedis:
             return int(data.get("result", 0))
         return 0
 
+    async def zadd(self, key: str, score: float, member: str) -> int:
+        """Add member with score to a sorted set."""
+        data = await self._request("", ["ZADD", key, str(score), member])
+        if isinstance(data, dict) and "error" in data:
+            raise RedisUnavailableError(self._redact(data["error"]))
+        return int(data.get("result", 0))
+
+    async def zrem(self, key: str, member: str) -> int:
+        """Remove member from a sorted set."""
+        data = await self._request("", ["ZREM", key, member])
+        if isinstance(data, dict) and "error" in data:
+            raise RedisUnavailableError(self._redact(data["error"]))
+        return int(data.get("result", 0))
+
+    async def zrangebyscore(self, key: str, min_score: float | str, max_score: float | str) -> List[str]:
+        """Return members in sorted set with scores between min_score and max_score."""
+        data = await self._request("", ["ZRANGEBYSCORE", key, str(min_score), str(max_score)])
+        if isinstance(data, dict) and "error" in data:
+            raise RedisUnavailableError(self._redact(data["error"]))
+        # Upstash REST returns the list inside the 'result' field
+        return data.get("result", [])
+
     async def ping(self) -> bool:
         """Checks liveness of the Upstash Redis instance. Returns True if responsive."""
         try:
