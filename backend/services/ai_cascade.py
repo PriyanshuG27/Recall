@@ -972,6 +972,108 @@ class AICascade:
 
         return None
 
+    async def answer_graph_question(self, query: str, items: List[Dict[str, Any]]) -> Optional[str]:
+        """
+        Generate a synthesised, conversational response to a user question about their knowledge graph.
+        Uses ONLY the retrieved items context and enforces rules.
+        """
+        import sys
+        if (settings.ENV == "test" or "pytest" in sys.modules) and not getattr(self, "_force_production_llm", False):
+            # Under test, return mock answer
+            return f"Mock RAG answer: Graph has {len(items)} items. Query was: {query}"
+
+        # 1. Format the context from retrieved items
+        context_blocks = []
+        for idx, item in enumerate(items):
+            tag_str = ", ".join(item.get("tags", []))
+            created_at_str = item.get("created_at")
+            if hasattr(created_at_str, "strftime"):
+                created_at_str = created_at_str.strftime("%Y-%m-%d")
+            else:
+                created_at_str = str(created_at_str)
+            block = (
+                f"Item {idx+1}:\n"
+                f"- Title: {item.get('title') or 'Untitled Item'}\n"
+                f"- Summary: {item.get('summary') or 'No summary'}\n"
+                f"- Tags: [{tag_str}]\n"
+                f"- Saved Date: {created_at_str}\n"
+            )
+            context_blocks.append(block)
+        
+        context_text = "\n".join(context_blocks)
+
+        # 2. Formulate system instruction and user prompt matching our quality gates
+        system_instruction = (
+            "You are analyzing the user's personal knowledge graph to answer a question they asked about their own thinking.\n"
+            "Your job is to answer the user's question by stating specific patterns, tensions, or recurring questions in what they saved.\n\n"
+            "RULES:\n"
+            "1. Answer ONLY from the retrieved items provided in the context. Do not use general knowledge or guess.\n"
+            "2. Name both items/subjects by their literal title to ground your observation (e.g., 'You saved a chapter on aviation checklists, then weeks later, Chernobyl'). Never use vague categories (e.g. 'You have saved content about systems and disasters').\n"
+            "3. If the retrieved items do not contain enough signal or relevant information to answer the question, state clearly and directly that the evidence in your graph is too thin to answer this right now, rather than trying to invent an answer.\n"
+            "4. Maximum 2-4 sentences. Do not use hedging language ('it seems', 'perhaps', 'you might be'). State it as a direct observation.\n"
+            "5. Never include any diagnostic or psychological labels for the person (no 'anxiety', 'control issues', 'avoidance', clinical or psychological terms of any kind). Describe the pattern in what was saved, never the person's psychology.\n"
+            "6. Any generated message containing one of these patterns is rejected: 'You seem interested in...', 'You have a passion for...', 'This might suggest...', 'It's possible that...', 'Perhaps you...', 'Your journey', 'your growth', 'your path'."
+        )
+
+        user_prompt = (
+            f"User Question: {query}\n\n"
+            f"Retrieved Graph Context:\n{context_text}\n"
+        )
+
+        # Enforce character limit of 10000 chars on context
+        max_context_chars = 10000
+        if len(context_text) > max_context_chars:
+            context_text = context_text[:max_context_chars] + "... [context truncated]"
+            user_prompt = (
+                f"User Question: {query}\n\n"
+                f"Retrieved Graph Context:\n{context_text}\n"
+            )
+
+        # RAG prompt structure
+        messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        # Call LLM using cascade tiers
+        providers = ["modal", "groq", "gemini"]
+        if settings.COMPUTE_PROVIDER:
+            if settings.COMPUTE_PROVIDER in providers:
+                providers.remove(settings.COMPUTE_PROVIDER)
+            providers.insert(0, settings.COMPUTE_PROVIDER)
+
+        for provider in providers:
+            try:
+                res = None
+                if provider == "modal" and settings.MODAL_API_TOKEN:
+                    modal_prompt = f"{system_instruction}\n\n{user_prompt}"
+                    res = await self._call_modal_rag(modal_prompt)
+                elif provider == "groq" and settings.GROQ_API_KEY:
+                    res = await self._call_groq_llm(messages, temperature=0.0, timeout=15.0)
+                elif provider == "gemini" and settings.GEMINI_API_KEY:
+                    gemini_prompt = f"{system_instruction}\n\n{user_prompt}"
+                    res = await self._call_gemini_llm(gemini_prompt, temperature=0.0, timeout=20.0)
+                
+                if res:
+                    cleaned_res = self._strip_thinking(res)
+                    # Verify none of the banned phrase patterns are present
+                    banned_patterns = [
+                        r"you seem interested in", r"you have a passion for",
+                        r"this might suggest", r"it's possible that", r"perhaps you",
+                        r"your journey", r"your growth", r"your path"
+                    ]
+                    import re
+                    res_lower = cleaned_res.lower()
+                    if any(re.search(pat, res_lower) for pat in banned_patterns):
+                        logger.warning("RAG answer generation rejected due to banned phrases: %s", cleaned_res)
+                        continue  # Try next provider
+                    return cleaned_res
+            except Exception as e:
+                logger.warning("Conversational RAG answer generation failed on provider %s: %s", provider, e)
+                continue
+
+        return None
+
     async def _call_modal_rag(self, prompt: str) -> Optional[str]:
         url = "https://pri27--llama-summary.modal.run/rag"
         headers = {"Authorization": f"Bearer {settings.MODAL_API_TOKEN}"}

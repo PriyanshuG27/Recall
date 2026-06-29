@@ -229,3 +229,41 @@ async def hybrid_search(query: str, user_id: int, db: AsyncConnection) -> List[D
             })
 
     return results
+
+
+async def rag_semantic_search(query: str, user_id: int, db: AsyncConnection, limit: int = 12) -> List[Dict[str, Any]]:
+    """
+    Perform a pure semantic search using pgvector (HNSW cosine similarity)
+    on the user's items for conversational RAG context.
+    Returns the top matching items.
+    """
+    query_embedding = await embed_text(query)
+
+    query_str = """
+        SELECT id, title, summary, source_type, source_url, tags, created_at,
+               1 - (embedding <=> %s::vector) AS similarity
+        FROM items
+        WHERE user_id = %s
+        ORDER BY embedding <=> %s::vector
+        LIMIT %s;
+    """
+
+    async with db.cursor() as cur:
+        await cur.execute(query_str, (query_embedding, user_id, query_embedding, limit))
+        rows = await cur.fetchall()
+
+        results = []
+        for r in rows:
+            results.append({
+                "id": r[0],
+                "title": r[1],
+                "summary": r[2],
+                "source_type": r[3],
+                "source_url": r[4],
+                "tags": r[5] if r[5] is not None else [],
+                "created_at": r[6],
+                "similarity": float(r[7]),
+            })
+
+    return results
+

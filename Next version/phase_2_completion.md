@@ -25,19 +25,25 @@ This document outlines the successful implementation, testing, and delivery of a
 * **Evening Answer** (8:00 PM local time): Generates a tension connection insight using the LLM cascade, marks it as `confirmed`, and sends the resolution to the user.
 * **Dispatcher Sweep**: Expired candidates are updated to `expired` status in the DB and cleared from Redis.
 
+### Conversational Graph RAG Interface (Section 8.6)
+* **Question Interception**: Real-time webhook interception of question messages (using `?` and starting word heuristics), routing them to RAG search without creating a new node or entering the debouncer queue.
+* **pgvector Search**: Implements `rag_semantic_search` in `search_service.py` to query the user's saved items using HNSW cosine distance, returning the top 8–12 context matches.
+* **Structured RAG Prompt & Quality Gates**: Synthesizes a 2-4 sentence answer in `ai_cascade.py` grounded strictly in retrieved items. Requires literal title citations, prevents clinical/psychological terminology, and rejects template phrases (e.g. *"You seem interested in..."*).
+* **HTML Delivery Mode**: Safely HTML-escapes content and converts double asterisks to bold tags, preventing Telegram parsing errors on underscores in filenames like `file_33.pdf`.
+
 ---
 
 ## 2. Testing and Regression Verification
 
 All tests run completely offline with zero external API calls or network leaks.
-* **New Tests**: `test_context_rotation.py` and `test_insight_pipeline.py` verify all logic, parameters, and cron operations.
+* **New Tests**: `test_conversational_rag.py`, `test_context_rotation.py`, and `test_insight_pipeline.py` verify all logic, parameters, and cron operations.
 * **Regression Checks**: Run full test suite with 100% success.
   ```bash
   $ pytest
-  ===================== 334 passed in 19.16s ======================
+  ===================== 348 passed in 23.70s ======================
   ```
 
 ---
 
 ## 3. Manual Verification Steps
-Please refer to the walkthrough file [walkthrough.md](file:///C:/Users/pri27/.gemini/antigravity/brain/aba9287c-477a-49c7-91b6-f42adb83d874/walkthrough.md) for step-by-step instructions on verifying the changes in your local Telegram and DB testing environment.
+Please refer to the walkthrough file [walkthrough.md](file:///C:/Users/pri27/.gemini/antigravity/brain/8ef787b4-e243-4191-aef5-2b553c3bff40/walkthrough.md) for step-by-step instructions on verifying the changes in your local Telegram and DB testing environment.

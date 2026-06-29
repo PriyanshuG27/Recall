@@ -1463,6 +1463,30 @@ async def telegram_webhook(
                 )
                 return {"status": "ok", "detail": "context_note_capture_triggered"}
 
+        # 7.5 Check for Conversational Graph RAG Query (steady state only)
+        if content_type == "text" and text_content:
+            is_question = False
+            cleaned_text = text_content.strip()
+            if cleaned_text.endswith("?"):
+                is_question = True
+            else:
+                question_words = ("who", "what", "where", "when", "why", "how", "can", "is", "are", "do", "does", "did", "would", "could", "should", "will", "tell me", "explain")
+                lower_text = cleaned_text.lower()
+                if any(lower_text.startswith(word + " ") or lower_text.startswith(word + "?") for word in question_words):
+                    is_question = True
+            
+            if is_question:
+                pending_ctx = await redis.get(f"pending_context:{chat_id}")
+                if not pending_ctx:
+                    background_tasks.add_task(
+                        handle_conversational_rag,
+                        chat_id,
+                        user_id,
+                        text_content,
+                        db
+                    )
+                    return {"status": "ok", "detail": "conversational_rag_triggered"}
+
         # 8. Steady-state Batch Debouncing
         if content_type != "unsupported":
             item_payload = {
@@ -2018,4 +2042,73 @@ async def wait_and_process_batch(chat_id: str, user_id: int, expected_time: str)
     
     await redis.lpush("recall:tasks", json.dumps(batch_task))
     logger.info("Consolidated batch task of %d items queued for chat_id %s", len(items), chat_id)
+
+
+async def handle_conversational_rag(
+    chat_id: str,
+    user_id: int,
+    query: str,
+    db: psycopg.AsyncConnection
+):
+    """
+    Background worker task to retrieve RAG context, run the AI cascade,
+    and reply to conversational question messages back on Telegram.
+    """
+    try:
+        from backend.services.search_service import rag_semantic_search
+        from backend.services.ai_cascade import AICascade
+
+        # 1. Retrieve context
+        items = await rag_semantic_search(query, user_id, db, limit=12)
+
+        if not items:
+            await send_telegram_ack(
+                chat_id,
+                "Your graph is empty! Please save some links, PDFs, images, or voice notes first so I can understand your thinking."
+            )
+            logger.info("Conversational query: user_id=%d query=%r query_type=conversational results=0", user_id, query)
+            return
+
+        # 2. Generate synthesized answer
+        cascade = AICascade()
+        answer = await cascade.answer_graph_question(query, items)
+
+        if not answer:
+            answer = "I couldn't analyze the graph for this question right now. Please try again later."
+
+        # Log search query for analytics
+        logger.info(
+            "Conversational query: user_id=%d, query=%r, answer=%r",
+            user_id,
+            query,
+            answer,
+            extra={"query_type": "conversational"}
+        )
+
+        # 3. Send message back to user via Telegram safely using HTML parse mode
+        import html
+        import re
+        escaped_answer = html.escape(answer)
+        # Convert any markdown bold (*text*) to HTML bold (<b>text</b>)
+        formatted_answer = re.sub(r'\*(.*?)\*', r'<b>\1</b>', escaped_answer)
+
+        url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": formatted_answer,
+            "parse_mode": "HTML"
+        }
+        resp = await http_client.post(url, json=payload)
+        resp.raise_for_status()
+
+    except Exception as e:
+        logger.error("Failed to execute conversational RAG: %s", e)
+        try:
+            await send_telegram_ack(
+                chat_id,
+                "Sorry, I ran into an error while checking your graph. Please try again."
+            )
+        except Exception:
+            pass
+
 

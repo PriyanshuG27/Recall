@@ -46,11 +46,11 @@ Below is the unified implementation plan. It integrates all Part 8 mechanics (fr
 
 ---
 
-### Phase 2: Loops, Candidate Scan & Conversational RAG (Baseline Done · 1 Backfill Outstanding)
+### Phase 2: Loops, Candidate Scan & Conversational RAG (Completed)
 * **Goal**: Generate nightly cross-cluster candidate connections and dispatch the daily open-loop/closed-loop mystery messages.
 * **Backend**: `insight_candidates` table with columns: `id`, `user_id`, `item_id_a`, `item_id_b`, `similarity_score`, `bucket`, `status`, `expires_at`, and `insight_text`.
 * **Loops**: Morning Mystery clue (8 AM local, sets 12h expiry on candidate) -> Evening Answer resolution (8 PM local, LLM generates specific tension summary).
-* **[BACKFILL 5] Conversational Graph RAG Interface (Section 8.6)**:
+* **[COMPLETED] Conversational Graph RAG Interface (Section 8.6)**:
   * *Telegram Bot*: In `webhook.py`, detect incoming question intents (using heuristics like `?` or starting with question words).
   * *RAG Engine*: Run a semantic vector query on the user's `items` table, extract the top 8–12 context summaries, and pass them to the AI cascade to reply conversationally to the user's question without creating a new node.
 
