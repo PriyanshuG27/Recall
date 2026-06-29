@@ -1332,7 +1332,7 @@ async def recall_moment_dispatcher() -> None:
     try:
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT id, chat_id, timezone_offset, last_recall_moment_at FROM users")
+                await cur.execute("SELECT id, telegram_chat_id as chat_id, timezone_offset, last_recall_moment_at FROM users")
                 users = await cur.fetchall()
     except Exception as e:
         logger.error("Failed to fetch users in Recall Moment dispatcher: %s", e)
