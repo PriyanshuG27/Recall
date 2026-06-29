@@ -4,13 +4,14 @@ This document serves as the single consolidated blueprint for the Recall platfor
 
 ---
 
-## 1. What Has Been Completed (Phases 0–2 Baseline)
+## 1. What Has Been Completed (Phases 0–3 Baseline)
 
-The baseline frameworks for the first three phases of the Addiction Architecture have already been successfully built, verified, and unit-tested offline:
+The baseline frameworks for the first four phases of the Addiction Architecture have already been successfully built, verified, and unit-tested offline:
 
 * **Phase 0 (Quality Gate)**: HARDENED the primary LLM cascade prompt templates with strict specificity rules, anti-forcing constraints, and negative examples (achieving 20/20 on Qwen/Llama and Gemini Flash fallbacks).
 * **Phase 1 (Basic Ingestion & Friction-Reduction)**: Created the Redis 4-second debouncer, 3-question conversational onboarding with inline skip callbacks, single-request JSON cascade schema, pairwise similarity clustering to combined parent nodes, and completed all 4 Phase 1 backfill tasks (Passive Context Ingestion, Onboarding Callback Buttons, Mid-Graph Re-Engagement cron, Settings & Timezone Setup Integration).
 * **Phase 2 (Candidate loops)**: Added `insight_candidates` table, nightly Louvain scans (cosine similarity $\ge 0.60$, saved $\ge 14$ days apart), 60-day MD5 novelty filters, the two-part Morning Mystery (8 AM) and Evening Answer (8 PM) cron loops, and dynamic AI mood-angle rotation (8 angles, epsilon-greedy variant selection, context history of 4).
+* **Phase 3 (Urgency, Rhythm, and Calibrations)**: Implemented 2D Map Canvas pulsing and color-draining edge decay, PostgreSQL `save_time_bucket` categorization, weekly concentration pattern scan notifications, weekly empirical near-miss lower floor calibration (starts at 0.71, autotunes to 0.73 or 0.69 based on conversions), and randomized/jittered weekly Recall Moments (max 1 send per 7 days, randomized 10 AM–4 PM local time).
 
 ---
 
@@ -56,10 +57,10 @@ Below is the unified implementation plan. It integrates all Part 8 mechanics (fr
 
 ---
 
-### Phase 3: Urgency, Rhythm, and Calibrations (Next Phase)
+### Phase 3: Urgency, Rhythm, and Calibrations (Completed)
 * **Goal**: Establish visual urgency, calibrate near-miss thresholds, and analyze weekly save rhythms.
 * **Drift Window Dashboard Decay (Section 6.2 & 7.1)**:
-  * *Frontend (Three.js)*: Render decaying edges in the constellation graph. As the 6-hour `expires_at` countdown ticks down, the connecting edge's opacity and color saturation drain in real time.
+  * *Frontend (2D Map Canvas)*: Render decaying edges between active candidates on the 2D Mind Map (`MapCanvas.jsx`). As the 6-hour `expires_at` countdown ticks down, the edge pulses, thins, and drains color and opacity in real time.
 * **Temporal Rhythm Mechanic (Section 8.4)**:
   * *Backend*: Populate `items.save_time_bucket` (morning/afternoon/evening/night).
   * *Cron Job*: Run a weekly scanner to detect time concentration patterns (e.g., "You save philosophy content almost exclusively after 10 PM") and queue them for monthly surprise notifications.

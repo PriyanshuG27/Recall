@@ -220,6 +220,7 @@ export default function MapPage() {
   const [items,        setItems]        = useState([]);
   const [graphNodes,   setGraphNodes]   = useState([]);
   const [graphEdges,   setGraphEdges]   = useState([]);
+  const [activeCandidates, setActiveCandidates] = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [loadProgress, setLoadProgress] = useState(0);
   const [error,        setError]        = useState(null);
@@ -343,6 +344,18 @@ export default function MapPage() {
       setGraphNodes(nodes);
       setGraphEdges(edges);
       
+      // Fetch active connection candidates
+      let candidates = [];
+      try {
+        const candRes = await fetch('/api/candidates/active', { credentials: 'include' });
+        if (candRes.ok) {
+          candidates = await candRes.json();
+        }
+      } catch (cErr) {
+        console.error('[Map] failed to fetch active candidates:', cErr);
+      }
+      setActiveCandidates(candidates);
+
       // Select a random non-hub node for the daily "Star Flare"
       const nonHubs = nodes.filter(n => n.type !== 'hub');
       if (nonHubs.length > 0) {
@@ -526,6 +539,7 @@ export default function MapPage() {
               <MapCanvas 
                 nodes={graphNodes} 
                 edges={graphEdges} 
+                activeCandidates={activeCandidates}
                 filterType={filterType} 
                 selectedNodeId={selectedNode?.id ?? null} 
                 selectedHubId={selectedHub?.id ?? null} 

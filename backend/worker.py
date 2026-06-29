@@ -383,9 +383,10 @@ async def save_minimal_bookmark(user_id: int, source_type: str, file_id: Optiona
             raise RuntimeError("Failed to insert minimal bookmark")
         item_id = row[0]
         passive_ctx = await compute_passive_context(user_id, source_type, db)
+        time_bucket = json.loads(passive_ctx).get("time_of_day")
         await cur.execute(
-            "UPDATE items SET passive_context = %s WHERE id = %s;",
-            (passive_ctx, item_id)
+            "UPDATE items SET passive_context = %s, save_time_bucket = %s WHERE id = %s;",
+            (passive_ctx, time_bucket, item_id)
         )
         await db.commit()
     return item_id
@@ -524,9 +525,10 @@ async def process_onboarding_task(task: Dict[str, Any], user_id: int, chat_id: s
             item_id = row[0] if row else None
             if item_id:
                 passive_ctx = await compute_passive_context(user_id, 'onboarding', conn)
+                time_bucket = json.loads(passive_ctx).get("time_of_day")
                 await cur.execute(
-                    "UPDATE items SET passive_context = %s WHERE id = %s;",
-                    (passive_ctx, item_id)
+                    "UPDATE items SET passive_context = %s, save_time_bucket = %s WHERE id = %s;",
+                    (passive_ctx, time_bucket, item_id)
                 )
             await conn.commit()
             
@@ -690,9 +692,10 @@ async def process_batch_task(task: Dict[str, Any], user_id: int, chat_id: str) -
                     parent_id = parent_row[0] if parent_row else None
                     if parent_id:
                         passive_ctx = await compute_passive_context(user_id, 'combined', conn)
+                        time_bucket = json.loads(passive_ctx).get("time_of_day")
                         await cur.execute(
-                            "UPDATE items SET passive_context = %s WHERE id = %s;",
-                            (passive_ctx, parent_id)
+                            "UPDATE items SET passive_context = %s, save_time_bucket = %s WHERE id = %s;",
+                            (passive_ctx, time_bucket, parent_id)
                         )
                     await conn.commit()
                     
@@ -1041,9 +1044,10 @@ async def process_single_item(task: Dict[str, Any], user_id: int, chat_id: str, 
                 await conn.execute("SET statement_timeout = '30s'")
                 async with conn.cursor() as cur:
                     passive_ctx = await compute_passive_context(user_id, content_type or "unknown", conn)
+                    time_bucket = json.loads(passive_ctx).get("time_of_day")
                     await cur.execute(
-                        "UPDATE items SET passive_context = %s WHERE id = %s;",
-                        (passive_ctx, item_id)
+                        "UPDATE items SET passive_context = %s, save_time_bucket = %s WHERE id = %s;",
+                        (passive_ctx, time_bucket, item_id)
                     )
                     await conn.commit()
         except Exception as passive_err:

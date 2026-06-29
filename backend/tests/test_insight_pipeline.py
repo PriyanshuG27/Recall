@@ -190,7 +190,7 @@ async def test_scan_insight_candidates_success():
     user_id = 123
     
     cursor = MockCursor(
-        fetchall_data=[(10, 20, 0.68)]
+        fetchall_data=[(10, 20, 0.78)]
     )
     hubs_data = [(1, [10]), (2, [20])]
     
@@ -217,7 +217,7 @@ async def test_scan_insight_candidates_success():
             assert params[0] == user_id
             assert params[1] == 10
             assert params[2] == 20
-            assert params[3] == 0.68
+            assert params[3] == 0.78
             assert params[4] == "confirmed"
     assert inserted
 

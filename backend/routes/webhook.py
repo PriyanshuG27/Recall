@@ -235,7 +235,9 @@ async def telegram_webhook(
                 data.startswith("onboarding_drive_sync:") or
                 data.startswith("onboarding_drive_disconnect:") or
                 data.startswith("onboarding_skip:") or
-                data.startswith("onboarding_opt:")
+                data.startswith("onboarding_opt:") or
+                data.startswith("candidate_confirm:") or
+                data.startswith("candidate_drift:")
             )
             if is_onboarding_or_settings:
                 url_ans = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
@@ -246,6 +248,52 @@ async def telegram_webhook(
             
             user_id = await upsert_user(chat_id, db)
             
+            if data.startswith("candidate_confirm:"):
+                cand_id = int(data.split(":")[1])
+                async with db.cursor() as cur:
+                    await cur.execute(
+                        "UPDATE insight_candidates SET status = 'confirmed', expires_at = NULL WHERE id = %s AND user_id = %s;",
+                        (cand_id, user_id)
+                    )
+                    await db.commit()
+                await redis.zrem("reminders:active", f"drift:{cand_id}")
+                
+                orig_text = callback_query.get("message", {}).get("text", "")
+                clean_text = orig_text.split("💡")[0].strip()
+                confirm_msg = f"{clean_text}\n\n🔗 *Connection saved permanently to your Mind Map!* ✓"
+                
+                url_edit = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageText"
+                await http_client.post(url_edit, json={
+                    "chat_id": chat_id,
+                    "message_id": callback_query.get("message", {}).get("message_id"),
+                    "text": confirm_msg,
+                    "parse_mode": "Markdown"
+                })
+                return {"status": "ok"}
+                
+            elif data.startswith("candidate_drift:"):
+                cand_id = int(data.split(":")[1])
+                async with db.cursor() as cur:
+                    await cur.execute(
+                        "UPDATE insight_candidates SET status = 'expired' WHERE id = %s AND user_id = %s;",
+                        (cand_id, user_id)
+                    )
+                    await db.commit()
+                await redis.zrem("reminders:active", f"drift:{cand_id}")
+                
+                orig_text = callback_query.get("message", {}).get("text", "")
+                clean_text = orig_text.split("💡")[0].strip()
+                drift_msg = f"{clean_text}\n\n💨 *Connection dissolved (let it drift).* ✓"
+                
+                url_edit = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageText"
+                await http_client.post(url_edit, json={
+                    "chat_id": chat_id,
+                    "message_id": callback_query.get("message", {}).get("message_id"),
+                    "text": drift_msg,
+                    "parse_mode": "Markdown"
+                })
+                return {"status": "ok"}
+
             if data == "quiz:next":
                 async with db.cursor() as cur:
                     await cur.execute(

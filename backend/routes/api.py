@@ -40,6 +40,7 @@ from backend.models.schemas import (
     RAGSearchResponse,
     UserMeResponse,
     UserMeUpdateRequest,
+    GraphCandidate,
 )
 
 logger = logging.getLogger(__name__)
@@ -701,10 +702,47 @@ async def get_graph(
 
     edges = [GraphEdge(source=src, target=tgt, weight=w) for (src, tgt), w in edges_dict.items()]
 
+    # Fetch active candidates to return them on /graph too
+    candidates = []
+    try:
+        async with db.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, item_id_a, item_id_b, similarity_score, expires_at, status, insight_text
+                FROM insight_candidates
+                WHERE user_id = %s
+                  AND status = 'delivered'
+                  AND expires_at > NOW()
+                """,
+                (user.id,)
+            )
+            candidate_rows = await cur.fetchall()
+
+        for c_row in candidate_rows:
+            cand = GraphCandidate(
+                id=c_row[0],
+                item_id_a=c_row[1],
+                item_id_b=c_row[2],
+                similarity_score=float(c_row[3]),
+                expires_at=c_row[4],
+                status=c_row[5],
+                insight_text=c_row[6]
+            )
+            candidates.append(cand)
+
+            # Inject candidate connection into the edges if not already present
+            src = min(c_row[1], c_row[2])
+            tgt = max(c_row[1], c_row[2])
+            if (src, tgt) not in edges_dict:
+                edges.append(GraphEdge(source=src, target=tgt, weight=float(c_row[3])))
+    except Exception as cand_err:
+        logger.error("Failed to fetch active candidates for graph: %s", cand_err)
+
     response_data = GraphResponse(
         nodes=nodes,
         edges=edges,
-        hubs=validated_hubs
+        hubs=validated_hubs,
+        candidates=candidates
     )
 
     # 7. Write to cache with 60s TTL
@@ -714,6 +752,55 @@ async def get_graph(
         logger.warning("Redis cache write failed: %s", e)
 
     return response_data
+
+
+@router.get(
+    "/candidates/active",
+    response_model=List[GraphCandidate],
+    tags=["graph"],
+    summary="Get active connection candidates",
+    description="Returns active candidates for the current user (representing active Drift Windows).",
+    dependencies=[Depends(rate_limit("candidates", 30))],
+)
+async def get_active_candidates(
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+):
+    """Retrieve active connection candidates (delivered, unexpired)."""
+    try:
+        async with db.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, item_id_a, item_id_b, similarity_score, expires_at, status, insight_text
+                FROM insight_candidates
+                WHERE user_id = %s
+                  AND status = 'delivered'
+                  AND expires_at > NOW()
+                """,
+                (user.id,)
+            )
+            rows = await cur.fetchall()
+
+        results = []
+        for r in rows:
+            results.append(
+                GraphCandidate(
+                    id=r[0],
+                    item_id_a=r[1],
+                    item_id_b=r[2],
+                    similarity_score=float(r[3]),
+                    expires_at=r[4],
+                    status=r[5],
+                    insight_text=r[6]
+                )
+            )
+        return results
+    except Exception as e:
+        logger.error("Failed to fetch active candidates: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve active candidates."
+        )
 
 # ---------------------------------------------------------------------------
 # Quizzes Group

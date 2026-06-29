@@ -84,8 +84,11 @@ async def open_pool() -> None:
                 );
             """)
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_candidates_user_status ON insight_candidates(user_id, status);")
+            await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS save_time_bucket VARCHAR(20);")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS near_miss_lower_bound NUMERIC(4, 3) DEFAULT 0.710;")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_recall_moment_at TIMESTAMP WITH TIME ZONE;")
             await conn.commit()
-        logger.info("Dynamic schema check completed: items.context_prompt, items.passive_context, and insight_candidates verified/added.")
+        logger.info("Dynamic schema check completed: items.context_prompt, items.passive_context, items.save_time_bucket, and insight_candidates verified/added.")
     except Exception as ddl_err:
         logger.error("Failed to run dynamic schema update: %s", ddl_err)
 

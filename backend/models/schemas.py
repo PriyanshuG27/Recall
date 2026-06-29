@@ -118,10 +118,20 @@ class GraphHub(BaseModel):
     label: str = Field(..., description="LLM-generated community label.")
     member_ids: List[int] = Field(..., description="List of validated member item IDs in the hub.")
 
+class GraphCandidate(BaseModel):
+    id: int = Field(..., description="Candidate internal ID.")
+    item_id_a: int = Field(..., description="Source item node ID.")
+    item_id_b: int = Field(..., description="Target item node ID.")
+    similarity_score: float = Field(..., description="Candidate connection similarity.")
+    insight_text: Optional[str] = Field(None, description="Tension connection insight text.")
+    expires_at: AwareDateTime = Field(..., description="Drift countdown expiration time.")
+    status: str = Field(..., description="Connection status enum.")
+
 class GraphResponse(BaseModel):
     nodes: List[GraphNode] = Field(..., description="List of item nodes.")
     edges: List[GraphEdge] = Field(..., description="List of similarity edges.")
     hubs: List[GraphHub] = Field(..., description="List of semantic hubs.")
+    candidates: List[GraphCandidate] = Field(default=[], description="List of active connection candidates.")
 
 # ---------------------------------------------------------------------------
 # Quizzes schemas

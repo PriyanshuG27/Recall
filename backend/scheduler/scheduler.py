@@ -170,7 +170,14 @@ async def reminders_dispatcher() -> None:
 
 async def scan_insight_candidates_for_user(user_id: int, pool) -> None:
     try:
-        # 1. Fetch cross-cluster item pairs (saved >= 14 days apart, similarity >= 0.60)
+        # 1. Fetch user near_miss_lower_bound
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT near_miss_lower_bound FROM users WHERE id = %s;", (user_id,))
+                row = await cur.fetchone()
+                floor = float(row[0]) if (row and row[0] is not None) else 0.710
+
+        # 2. Fetch cross-cluster item pairs (saved >= 14 days apart, similarity >= floor)
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -182,11 +189,11 @@ async def scan_insight_candidates_for_user(user_id: int, pool) -> None:
                       AND a.created_at < b.created_at - INTERVAL '14 days'
                       AND a.source_type != 'combined'
                       AND b.source_type != 'combined'
-                      AND 1 - (a.embedding <=> b.embedding) >= 0.60
+                      AND 1 - (a.embedding <=> b.embedding) >= %s
                     ORDER BY similarity DESC
                     LIMIT 200;
                     """,
-                    (user_id, user_id)
+                    (user_id, user_id, floor)
                 )
                 candidate_pairs = await cur.fetchall()
                 
@@ -206,7 +213,7 @@ async def scan_insight_candidates_for_user(user_id: int, pool) -> None:
             for m_id in member_ids:
                 item_to_hub[m_id] = hub_id
                 
-        # 2. Process each pair
+        # 3. Process each pair
         import hashlib
         for item_a_id, item_b_id, sim in candidate_pairs:
             hub_a = item_to_hub.get(item_a_id)
@@ -243,7 +250,7 @@ async def scan_insight_candidates_for_user(user_id: int, pool) -> None:
                         continue
                         
                     # Insert into insight_candidates
-                    bucket = "confirmed" if sim >= 0.65 else "near_miss"
+                    bucket = "confirmed" if sim >= 0.75 else "near_miss"
                     await cur.execute(
                         """
                         INSERT INTO insight_candidates (user_id, item_id_a, item_id_b, similarity_score, bucket, status, cluster_pair_hash)
@@ -1134,6 +1141,301 @@ async def mid_graph_re_engagement_dispatcher() -> None:
         logger.error("mid_graph_re_engagement_dispatcher background job failed: %s", e, exc_info=True)
 
 
+async def near_miss_calibration() -> None:
+    """
+    Weekly background job to calibrate each user's near-miss similarity threshold.
+    Evaluates near-miss candidates created >= 14 days ago.
+    Adjusts threshold dynamically:
+      - If conversion (promoted to confirmed within 14 days) < 20%: narrow to 0.73-0.75
+      - If conversion > 60%: widen to 0.69-0.75
+    """
+    try:
+        pool = await get_pool()
+    except Exception as e:
+        logger.error("Failed to open database pool in Near-Miss Calibration job: %s", e)
+        return
+
+    # Fetch all users
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT id, near_miss_lower_bound FROM users")
+                users_data = await cur.fetchall()
+    except Exception as e:
+        logger.error("Failed to fetch users in Near-Miss Calibration job: %s", e)
+        return
+
+    for user_id, current_floor in users_data:
+        if current_floor is None:
+            current_floor = 0.710
+        else:
+            current_floor = float(current_floor)
+
+        try:
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    # Fetch near-misses created 14 to 30 days ago
+                    await cur.execute(
+                        """
+                        SELECT id, item_id_a, item_id_b, similarity_score, created_at
+                        FROM insight_candidates
+                        WHERE user_id = %s
+                          AND bucket = 'near_miss'
+                          AND created_at <= NOW() - INTERVAL '14 days'
+                          AND created_at >= NOW() - INTERVAL '30 days';
+                        """,
+                        (user_id,)
+                    )
+                    near_misses = await cur.fetchall()
+
+                    if not near_misses:
+                        logger.info("No historical near-misses for user %d to calibrate.", user_id)
+                        continue
+
+                    total_near_misses = len(near_misses)
+                    converted_count = 0
+
+                    for nm in near_misses:
+                        nm_id, item_a, item_b, score, created_at = nm
+                        # Check if a confirmed connection happened for this item pair in the 14 days after creation
+                        await cur.execute(
+                            """
+                            SELECT 1 FROM insight_candidates
+                            WHERE user_id = %s
+                              AND bucket = 'confirmed'
+                              AND similarity_score >= 0.75
+                              AND created_at >= %s
+                              AND created_at <= %s + INTERVAL '14 days'
+                              AND (
+                                  (item_id_a = %s AND item_id_b = %s) OR
+                                  (item_id_a = %s AND item_id_b = %s)
+                              )
+                            LIMIT 1;
+                            """,
+                            (user_id, created_at, created_at, item_a, item_b, item_b, item_a)
+                        )
+                        conversion_exists = await cur.fetchone()
+                        if conversion_exists:
+                            converted_count += 1
+
+                    conversion_rate = converted_count / total_near_misses
+                    logger.info("User %d near-miss conversion rate: %.2f%% (%d/%d)", user_id, conversion_rate * 100, converted_count, total_near_misses)
+
+                    new_floor = current_floor
+                    if conversion_rate < 0.20:
+                        new_floor = min(0.730, current_floor + 0.01)
+                    elif conversion_rate > 0.60:
+                        new_floor = max(0.690, current_floor - 0.01)
+
+                    if new_floor != current_floor:
+                        await cur.execute(
+                            "UPDATE users SET near_miss_lower_bound = %s WHERE id = %s;",
+                            (new_floor, user_id)
+                        )
+                        await conn.commit()
+                        logger.info("Calibrated near-miss threshold for user %d from %.3f to %.3f", user_id, current_floor, new_floor)
+
+        except Exception as cal_err:
+            logger.error("Failed to run near-miss calibration for user %d: %s", user_id, cal_err)
+
+
+async def save_rhythm_scanner() -> None:
+    """
+    Weekly background job to detect save rhythm patterns and queue monthly surprise notifications.
+    """
+    try:
+        pool = await get_pool()
+    except Exception as e:
+        logger.error("Failed to open database pool in Save Rhythm Scanner job: %s", e)
+        return
+
+    # Fetch all users
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT id, chat_id FROM users")
+                users = await cur.fetchall()
+    except Exception as e:
+        logger.error("Failed to fetch users in Save Rhythm Scanner job: %s", e)
+        return
+
+    for user_id, chat_id in users:
+        try:
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    # Query item count by semantic hub and time bucket for this user
+                    await cur.execute(
+                        """
+                        SELECT h.id, h.label, i.save_time_bucket, COUNT(*) as cnt
+                        FROM items i
+                        JOIN semantic_hubs h ON i.user_id = h.user_id AND i.id = ANY(h.member_ids)
+                        WHERE i.user_id = %s AND i.save_time_bucket IS NOT NULL
+                        GROUP BY h.id, h.label, i.save_time_bucket;
+                        """,
+                        (user_id,)
+                    )
+                    rows = await cur.fetchall()
+
+                    if not rows:
+                        continue
+
+                    # Group results by hub
+                    hub_stats = {}
+                    for hub_id, label, bucket, count in rows:
+                        if hub_id not in hub_stats:
+                            hub_stats[hub_id] = {"label": label, "buckets": {}, "total": 0}
+                        hub_stats[hub_id]["buckets"][bucket] = count
+                        hub_stats[hub_id]["total"] += count
+
+                    # Scan for > 75% concentration patterns
+                    for hub_id, stats in hub_stats.items():
+                        total = stats["total"]
+                        if total < 4:  # Require at least 4 items in a hub to establish a pattern
+                            continue
+
+                        for bucket, count in stats["buckets"].items():
+                            concentration = count / total
+                            if concentration >= 0.75:
+                                # Found a pattern! Queue a surprise re-engagement notification.
+                                rhythm_msg = (
+                                    f"⏰ *Save Rhythm Pattern Detected*!\n\n"
+                                    f"You save content under the cluster *{stats['label']}* "
+                                    f"almost exclusively ({concentration*100:.0f}%) in the *{bucket}*.\n"
+                                    f"Recall matches your daily rhythm to surface connections when your focus is highest!"
+                                )
+                                if chat_id:
+                                    await send_telegram_message(str(chat_id), rhythm_msg, parse_mode="Markdown")
+                                    logger.info("Sent rhythm notification to user %d for hub %s", user_id, stats["label"])
+                                break
+        except Exception as rhythm_err:
+            logger.error("Failed to run save rhythm scanner for user %d: %s", user_id, rhythm_err)
+
+
+async def recall_moment_dispatcher() -> None:
+    """
+    Background job to dispatch the weekly Recall Moment connection insight.
+    Runs hourly.
+    Randomly triggers once per 7 days per user between 10:00 AM and 4:00 PM user's local time.
+    """
+    try:
+        pool = await get_pool()
+    except Exception as e:
+        logger.error("Failed to open database pool in Recall Moment dispatcher: %s", e)
+        return
+
+    # Fetch all users
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT id, chat_id, timezone_offset, last_recall_moment_at FROM users")
+                users = await cur.fetchall()
+    except Exception as e:
+        logger.error("Failed to fetch users in Recall Moment dispatcher: %s", e)
+        return
+
+    import random
+    import time
+    for user_id, chat_id, offset_minutes, last_moment in users:
+        if not chat_id:
+            continue
+
+        if offset_minutes is None:
+            offset_minutes = 0
+
+        # 1. Enforce rolling 7-day limit
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        if last_moment:
+            if last_moment.tzinfo is None:
+                last_moment = last_moment.replace(tzinfo=datetime.timezone.utc)
+            if now_utc - last_moment < datetime.timedelta(days=7):
+                continue
+
+        # 2. Check user's local time window (10:00 AM - 4:00 PM local)
+        local_time = now_utc + datetime.timedelta(minutes=offset_minutes)
+        local_hour = local_time.hour
+        if not (10 <= local_hour < 16):
+            continue
+
+        # 3. Time jitter: randomized check to spread sends across the 6-hour window
+        if random.random() > (1.0 / 6.0):
+            continue
+
+        # 4. Fetch the highest-similarity confirmed candidate connection
+        try:
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        SELECT c.id, c.item_id_a, c.item_id_b, 
+                               a.title, a.summary, a.tags, a.context_note, a.passive_context,
+                               b.title, b.summary, b.tags, b.context_note, b.passive_context
+                        FROM insight_candidates c
+                        JOIN items a ON c.item_id_a = a.id
+                        JOIN items b ON c.item_id_b = b.id
+                        WHERE c.user_id = %s AND c.status = 'pending' AND c.bucket = 'confirmed'
+                        ORDER BY c.similarity_score DESC
+                        LIMIT 1;
+                        """,
+                        (user_id,)
+                    )
+                    cand = await cur.fetchone()
+
+            if cand:
+                cand_id, item_a_id, item_b_id, t_a, s_a, tg_a, cn_a, pc_a, t_b, s_b, tg_b, cn_b, pc_b = cand
+                
+                # Generate connection insight text via AI Cascade
+                cascade = AICascade()
+                dict_a = {"title": t_a, "summary": s_a, "tags": tg_a, "context_note": cn_a, "passive_context": pc_a}
+                dict_b = {"title": t_b, "summary": s_b, "tags": tg_b, "context_note": cn_b, "passive_context": pc_b}
+                
+                logger.info("Generating Recall Moment connection insight for candidate %d...", cand_id)
+                insight = await cascade.generate_insight(dict_a, dict_b, 1)
+                
+                if insight:
+                    expiry_epoch = int(time.time()) + 6 * 3600  # 6-hour Drift Window expiration
+                    
+                    async with pool.connection() as conn:
+                        async with conn.cursor() as cur:
+                            await cur.execute(
+                                """
+                                UPDATE insight_candidates
+                                SET status = 'delivered', insight_text = %s, expires_at = NOW() + INTERVAL '6 hours'
+                                WHERE id = %s;
+                                """,
+                                (insight, cand_id)
+                            )
+                            await cur.execute(
+                                "UPDATE users SET last_recall_moment_at = %s WHERE id = %s;",
+                                (now_utc, user_id)
+                            )
+                            await conn.commit()
+
+                    await redis.zadd("reminders:active", float(expiry_epoch), f"drift:{cand_id}")
+
+                    recall_msg = (
+                        f"✨ *Recall Moment*!\n\n"
+                        f"A new connection is pulsing in your mind map:\n\n"
+                        f"*{insight}*\n\n"
+                        f"This link connects:\n"
+                        f"🔗 {t_a}\n"
+                        f"🔗 {t_b}\n\n"
+                        f"💡 _This connection expires in 6 hours! Open your dashboard map to see it pulse before it drifts away._"
+                    )
+                    reply_markup = {
+                        "inline_keyboard": [
+                            [
+                                {"text": "Keep Connection 🔗", "callback_data": f"candidate_confirm:{cand_id}"},
+                                {"text": "Let it Drift 💨", "callback_data": f"candidate_drift:{cand_id}"}
+                            ]
+                        ]
+                    }
+                    await send_telegram_message(str(chat_id), recall_msg, reply_markup=reply_markup, parse_mode="Markdown")
+                    logger.info("Sent Recall Moment connection candidate %d to user %d", cand_id, user_id)
+                    
+        except Exception as moment_err:
+            logger.error("Failed to run Recall Moment dispatcher for user %d: %s", user_id, moment_err)
+
+
 # ---------------------------------------------------------------------------
 # Scheduler Manager
 # ---------------------------------------------------------------------------
@@ -1225,9 +1527,33 @@ async def start_scheduler(app=None) -> None:
         id="mid_graph_re_engagement_dispatcher",
         misfire_grace_time=60
     )
+
+    # 11. near_miss_calibration (weekly on Sunday at 05:00 UTC)
+    _scheduler.add_job(
+        near_miss_calibration,
+        trigger=CronTrigger(day_of_week="sun", hour=5, minute=0, timezone="UTC"),
+        id="near_miss_calibration",
+        misfire_grace_time=60
+    )
+
+    # 12. save_rhythm_scanner (weekly on Saturday at 05:00 UTC)
+    _scheduler.add_job(
+        save_rhythm_scanner,
+        trigger=CronTrigger(day_of_week="sat", hour=5, minute=0, timezone="UTC"),
+        id="save_rhythm_scanner",
+        misfire_grace_time=60
+    )
+
+    # 13. recall_moment_dispatcher (hourly at minute 15 UTC)
+    _scheduler.add_job(
+        recall_moment_dispatcher,
+        trigger=CronTrigger(hour="*", minute=15, timezone="UTC"),
+        id="recall_moment_dispatcher",
+        misfire_grace_time=60
+    )
     
     _scheduler.start()
-    logger.info("Background job scheduler started successfully with all 10 jobs.")
+    logger.info("Background job scheduler started successfully with all 13 jobs.")
 
 
 async def stop_scheduler() -> None:

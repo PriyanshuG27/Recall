@@ -28,6 +28,7 @@ function makeStars(W, H) {
    ══════════════════════════════════════════════════════════════════════════ */
 export default function MapCanvas({
   nodes = [], edges = [],
+  activeCandidates = [],
   filterType = 'all',
   selectedNodeId = null,
   selectedHubId  = null,
@@ -48,6 +49,7 @@ export default function MapCanvas({
     selectedNodeId: null, selectedHubId: null, flareNodeId: null,
     searchQuery: '', physicsFrozen: false, showLabels: 'hover',
     gapsMode: false, burstHubId: null,
+    activeCandidates: [],
     alive: false, stars: [],
   });
 
@@ -59,6 +61,7 @@ export default function MapCanvas({
   useEffect(() => { s.current.showLabels     = showLabels;    }, [showLabels]);
   useEffect(() => { s.current.gapsMode       = gapsMode;      }, [gapsMode]);
   useEffect(() => { s.current.burstHubId     = burstHubId;    }, [burstHubId]);
+  useEffect(() => { s.current.activeCandidates = activeCandidates; }, [activeCandidates]);
 
   useEffect(() => {
     s.current.physicsFrozen = physicsFrozen;
@@ -383,6 +386,42 @@ export default function MapCanvas({
         }
         ctx.stroke();
       });
+
+      // Render active candidate connections (Drift Windows)
+      if (st.activeCandidates && st.activeCandidates.length > 0) {
+        st.activeCandidates.forEach(cand => {
+          const nodeA = sn.find(n => n.id === cand.item_id_a);
+          const nodeB = sn.find(n => n.id === cand.item_id_b);
+          if (nodeA && nodeB && nodeA.x != null && nodeB.x != null) {
+            // Calculate remaining time ratio against 6 hours (21600 seconds)
+            const expiresAt = new Date(cand.expires_at).getTime();
+            const now = Date.now();
+            const timeLeftMs = Math.max(0, expiresAt - now);
+            const totalDurationMs = 6 * 60 * 60 * 1000;
+            const ratio = Math.min(1.0, timeLeftMs / totalDurationMs);
+
+            // Pulsing effect for lineWidth
+            const pulse = Math.sin(now / 150) * 0.4 + 1.2; // fluctuates between 0.8 and 1.6
+            const lineWidth = (pulse * ratio) / k;
+
+            // Opacity decay
+            const baseAlpha = 0.95;
+            const alpha = baseAlpha * ratio;
+
+            // Interpolate color desaturation: glowing gold/orange (230, 160, 60) -> desaturated gray (138, 133, 130)
+            const r = Math.round(230 * ratio + 138 * (1 - ratio));
+            const g = Math.round(160 * ratio + 133 * (1 - ratio));
+            const b = Math.round(60 * ratio + 130 * (1 - ratio));
+
+            ctx.beginPath();
+            ctx.moveTo(nodeA.x, nodeA.y);
+            ctx.lineTo(nodeB.x, nodeB.y);
+            ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
+          }
+        });
+      }
 
       /* ── Nodes ─────────────────────────────────────────────────────── */
       sn.forEach(node => {
