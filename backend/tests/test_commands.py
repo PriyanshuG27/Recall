@@ -449,9 +449,11 @@ def test_command_quiz_success(client, db_state):
         assert json_payload["chat_id"] == "12345"
         assert "What is 2+2?" in json_payload["text"]
         assert "inline_keyboard" in json_payload["reply_markup"]
-        assert len(json_payload["reply_markup"]["inline_keyboard"]) == 2
-        assert len(json_payload["reply_markup"]["inline_keyboard"][0]) == 2
-        assert len(json_payload["reply_markup"]["inline_keyboard"][1]) == 2
+        assert len(json_payload["reply_markup"]["inline_keyboard"]) == 4
+        assert len(json_payload["reply_markup"]["inline_keyboard"][0]) == 1
+        assert len(json_payload["reply_markup"]["inline_keyboard"][1]) == 1
+        assert len(json_payload["reply_markup"]["inline_keyboard"][2]) == 1
+        assert len(json_payload["reply_markup"]["inline_keyboard"][3]) == 1
 
 def test_command_quiz_empty(client, db_state, mock_telegram_ack):
     # Clear quizzes from state for user 1

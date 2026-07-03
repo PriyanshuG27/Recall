@@ -4,7 +4,7 @@ import { useToast } from '../components/Toast';
 import axios from '../api/client';
 import { 
   User, Gear, Clock, Database, Flame, Globe, 
-  SpeakerHigh, SpeakerSlash, Plus, Trash, SignOut, Info, CalendarPlus, CheckCircle, Warning, Copy
+  SpeakerHigh, SpeakerSlash, Plus, Trash, SignOut, Info, CalendarPlus, CheckCircle, Warning, Copy, UploadSimple, DownloadSimple
 } from '@phosphor-icons/react';
 import ConnectDriveCard from '../components/ConnectDriveCard';
 import AudioEngine from '../utils/AudioEngine';
@@ -40,6 +40,8 @@ export default function Settings() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingZip, setExportingZip] = useState(false);
+  const [importingZip, setImportingZip] = useState(false);
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -187,6 +189,52 @@ export default function Settings() {
       addToast('Failed to export data', 'error');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleExportZip = async () => {
+    setExportingZip(true);
+    try {
+      const response = await axios.get('/api/export/zip', { responseType: 'blob' });
+      const filename = `recall-obsidian-export-${new Date().toISOString().split('T')[0]}.zip`;
+      const url = window.URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      addToast('Obsidian Vault ZIP downloaded successfully', 'success');
+    } catch (err) {
+      console.error('Failed to export Obsidian ZIP:', err);
+      addToast('Failed to export Obsidian ZIP', 'error');
+    } finally {
+      setExportingZip(false);
+    }
+  };
+
+  const handleImportZip = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setImportingZip(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const response = await axios.post('/api/import/zip', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      addToast(`Successfully imported ${response.data.imported_count} notes into your graph!`, 'success');
+      e.target.value = '';
+    } catch (err) {
+      console.error('Failed to import Obsidian ZIP:', err);
+      const detail = err.response?.data?.detail || 'Import failed';
+      addToast(`Import failed: ${detail}`, 'error');
+    } finally {
+      setImportingZip(false);
     }
   };
 
@@ -564,6 +612,44 @@ export default function Settings() {
               </div>
             )}
 
+            {/* Chrome Extension Download Card */}
+            <div style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(207, 163, 101, 0.08)', borderRadius: '20px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', backdropFilter: 'blur(10px)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Globe size={16} color="var(--accent-gold)" />
+                <h5 style={{ margin: 0, fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: '#F0EDE8' }}>
+                  Chrome Extension
+                </h5>
+              </div>
+              <p style={{ margin: 0, fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                Capture links, page selections, and quote highlights from any webpage. Download the pre-packaged extension directly, extract the ZIP, and load it into Google Chrome via Developer Mode.
+              </p>
+              <button
+                onClick={() => {
+                  AudioEngine.playClick();
+                  window.open('/api/extension/download', '_blank');
+                }}
+                style={{
+                  width: '100%',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(207, 163, 101, 0.18)',
+                  color: '#F0EDE8',
+                  padding: '0.75rem',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  letterSpacing: '0.05em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <DownloadSimple size={14} /> Download Extension (.ZIP)
+              </button>
+            </div>
+
             {/* Data Portability GDPR Export */}
             <div style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(207, 163, 101, 0.08)', borderRadius: '20px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', backdropFilter: 'blur(10px)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -598,6 +684,77 @@ export default function Settings() {
               >
                 {exporting ? 'Exporting...' : 'Export My Data (JSON)'}
               </button>
+            </div>
+
+            {/* Obsidian Integration */}
+            <div style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(207, 163, 101, 0.08)', borderRadius: '20px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', backdropFilter: 'blur(10px)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Globe size={16} color="var(--accent-gold)" />
+                <h5 style={{ margin: 0, fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: '#F0EDE8' }}>
+                  Obsidian & OKF Integration
+                </h5>
+              </div>
+              <p style={{ margin: 0, fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                Recall uses standard Open Knowledge Format (OKF). Export your complete knowledge graph to edit inside Obsidian or bulk upload your Obsidian vault ZIP directly.
+              </p>
+              
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  onClick={handleExportZip}
+                  disabled={exportingZip}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid rgba(207, 163, 101, 0.18)',
+                    color: '#F0EDE8',
+                    padding: '0.75rem',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '11px',
+                    letterSpacing: '0.05em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <DownloadSimple size={14} />
+                  {exportingZip ? 'Exporting...' : 'Export Vault (ZIP)'}
+                </button>
+
+                <label
+                  style={{
+                    flex: 1,
+                    background: 'rgba(207, 163, 101, 0.08)',
+                    border: '1px solid rgba(207, 163, 101, 0.25)',
+                    color: 'var(--accent-gold)',
+                    padding: '0.75rem',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '11px',
+                    letterSpacing: '0.05em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    transition: 'all 0.2s',
+                    textAlign: 'center'
+                  }}
+                >
+                  <UploadSimple size={14} />
+                  {importingZip ? 'Importing...' : 'Import Vault (ZIP)'}
+                  <input
+                    type="file"
+                    accept=".zip"
+                    onChange={handleImportZip}
+                    disabled={importingZip}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
             </div>
           </div>
         </div>

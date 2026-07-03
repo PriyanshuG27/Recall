@@ -7,23 +7,60 @@ document.addEventListener("DOMContentLoaded", async () => {
   const btnSave = document.getElementById("btn-save");
   const tabTitleEl = document.getElementById("tab-title");
   const tabUrlEl = document.getElementById("tab-url");
+  const quoteCardContainer = document.getElementById("quote-card-container");
+  const quoteTextEl = document.getElementById("quote-text");
+  const btnClearQuote = document.getElementById("btn-clear-quote");
+  const contextNoteInput = document.getElementById("context-note");
   const statusEl = document.getElementById("status-message");
+  const tagsContainer = document.getElementById("tags-container");
+  const suggestedTagsList = document.getElementById("suggested-tags-list");
 
   let currentTab = null;
   let jwtToken = null;
+  let selectedText = "";
+  let selectedTags = [];
 
-  btnLogin.addEventListener("click", () => {
-    chrome.tabs.create({ url: `${WEBSITE_URL}/auth/telegram` });
-  });
+  if (btnLogin) {
+    btnLogin.addEventListener("click", () => {
+      chrome.tabs.create({ url: `${WEBSITE_URL}/auth/telegram` });
+    });
+  }
 
-  btnSave.addEventListener("click", async () => {
-    if (!jwtToken || !currentTab) return;
-    
-    btnSave.disabled = true;
-    btnSave.innerHTML = '<span class="spinner"></span>Saving...';
-    hideStatus();
+  if (btnClearQuote) {
+    btnClearQuote.addEventListener("click", () => {
+      if (quoteCardContainer) {
+        quoteCardContainer.classList.add("slingshot-out");
+        setTimeout(() => {
+          quoteCardContainer.classList.add("hidden");
+          quoteCardContainer.classList.remove("slingshot-out");
+          selectedText = "";
+        }, 350);
+      }
+    });
+  }
 
-    chrome.runtime.sendMessage({ type: "SAVE_CURRENT_TAB" }, (response) => {
+  if (btnSave) {
+    btnSave.addEventListener("click", async () => {
+      if (!jwtToken || !currentTab) return;
+      
+      btnSave.disabled = true;
+      btnSave.innerHTML = '<span class="spinner"></span>Saving...';
+      hideStatus();
+
+      const payload = {
+        type: "SAVE_CURRENT_TAB"
+      };
+      if (contextNoteInput && contextNoteInput.value.trim()) {
+        payload.context_note = contextNoteInput.value.trim();
+      }
+      if (selectedText) {
+        payload.quote = selectedText;
+      }
+      if (selectedTags && selectedTags.length > 0) {
+        payload.tags = selectedTags;
+      }
+
+      chrome.runtime.sendMessage(payload, (response) => {
       if (chrome.runtime.lastError) {
         showError("Communication failed.");
         btnSave.disabled = false;
@@ -33,7 +70,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (response && response.success) {
         showSuccess("Saved ✓");
-        btnSave.textContent = "Save to Recall";
+        btnSave.textContent = "Saved ✓";
+        btnSave.classList.add("saved");
+        btnSave.disabled = true;
+        if (contextNoteInput) contextNoteInput.value = "";
+        if (quoteCardContainer) quoteCardContainer.classList.add("hidden");
+        setTimeout(() => {
+          window.close();
+        }, 1500);
       } else {
         const errMsg = (response && response.error) || "Failed to save.";
         showError(errMsg);
@@ -42,6 +86,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     });
   });
+}
 
   function xorCipher(text, key) {
     let result = "";
@@ -96,6 +141,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     return null;
   }
 
+  async function checkSelectedText(tabId) {
+    if (!chrome.scripting) return;
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tabId, allFrames: true },
+        func: () => window.getSelection().toString()
+      });
+      if (results && results.length > 0) {
+        for (const res of results) {
+          if (res && res.result && res.result.trim()) {
+            selectedText = res.result.trim();
+            break;
+          }
+        }
+        if (selectedText && quoteTextEl && quoteCardContainer) {
+          quoteTextEl.textContent = selectedText;
+          quoteCardContainer.classList.remove("hidden");
+        }
+      }
+    } catch (err) {
+      console.warn("Could not retrieve selected text:", err);
+    }
+  }
+
   async function loadActiveTab() {
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -103,6 +172,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentTab = tabs[0];
         tabTitleEl.textContent = currentTab.title || "Untitled Link";
         tabUrlEl.textContent = currentTab.url || "";
+        
+        // Check if page is already saved in Recall
+        chrome.runtime.sendMessage({ type: "CHECK_CURRENT_TAB" }, (response) => {
+          if (response && response.exists) {
+            btnSave.textContent = "Saved ✓";
+            btnSave.classList.add("saved");
+            btnSave.disabled = true;
+          }
+        });
+
+        await checkSelectedText(currentTab.id);
+        await fetchSuggestedTags();
       } else {
         tabTitleEl.textContent = "No active tab";
         tabUrlEl.textContent = "";
@@ -114,6 +195,55 @@ document.addEventListener("DOMContentLoaded", async () => {
       tabUrlEl.textContent = "";
       btnSave.disabled = true;
     }
+  }
+
+  async function fetchSuggestedTags() {
+    if (!jwtToken || !currentTab) return;
+    try {
+      let url = `${VITE_API_URL}/api/extension/suggest_tags?url=${encodeURIComponent(currentTab.url)}&title=${encodeURIComponent(currentTab.title)}`;
+      if (selectedText) {
+        url += `&text=${encodeURIComponent(selectedText)}`;
+      }
+      const response = await fetch(url, {
+        headers: {
+          "Authorization": `Bearer ${jwtToken}`
+        }
+      });
+      if (response.ok) {
+        const tags = await response.json();
+        renderSuggestedTags(tags);
+      }
+    } catch (err) {
+      console.error("Failed to fetch suggested tags:", err);
+    }
+  }
+
+  function renderSuggestedTags(tags) {
+    if (!tags || tags.length === 0) {
+      tagsContainer.classList.add("hidden");
+      return;
+    }
+    suggestedTagsList.innerHTML = "";
+    selectedTags = [];
+    tags.forEach(tag => {
+      const pill = document.createElement("span");
+      pill.className = "tag-pill active";
+      pill.textContent = `#${tag}`;
+      selectedTags.push(tag);
+
+      pill.addEventListener("click", () => {
+        pill.classList.toggle("active");
+        if (pill.classList.contains("active")) {
+          if (!selectedTags.includes(tag)) {
+            selectedTags.push(tag);
+          }
+        } else {
+          selectedTags = selectedTags.filter(t => t !== tag);
+        }
+      });
+      suggestedTagsList.appendChild(pill);
+    });
+    tagsContainer.classList.remove("hidden");
   }
 
   function showSuccess(msg) {

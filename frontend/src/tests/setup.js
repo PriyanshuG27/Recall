@@ -108,6 +108,8 @@ vi.mock('@phosphor-icons/react', () => {
     Sparkle: makeMock('Sparkle'),
     Copy: makeMock('Copy'),
     Check: makeMock('Check'),
+    UploadSimple: makeMock('UploadSimple'),
+    DownloadSimple: makeMock('DownloadSimple'),
     ArrowRight: makeMock('ArrowRight'),
     BookmarkSimple: makeMock('BookmarkSimple'),
     Lightning: makeMock('Lightning'),

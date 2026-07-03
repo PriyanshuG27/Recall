@@ -24,6 +24,18 @@ const htmlContent = `
         <h4 id="tab-title">Loading...</h4>
         <p id="tab-url">Loading...</p>
       </div>
+      <!-- Quote Card (Highlight Clip) -->
+      <div id="quote-card-container" class="quote-card-container hidden">
+        <div class="quote-header">
+          <span class="label">Captured Quote</span>
+          <button id="btn-clear-quote" class="clear-quote-btn" title="Clear Quote">×</button>
+        </div>
+        <p id="quote-text" class="quote-body"></p>
+      </div>
+      <!-- Custom Context Note Area -->
+      <div class="context-container">
+        <textarea id="context-note" placeholder="Write a context note..." rows="3"></textarea>
+      </div>
       <button id="btn-save">Save to Recall</button>
       <div id="status-message" class="status-message hidden"></div>
     </div>

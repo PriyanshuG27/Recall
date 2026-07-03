@@ -267,3 +267,49 @@ async def rag_semantic_search(query: str, user_id: int, db: AsyncConnection, lim
 
     return results
 
+
+_CATEGORY_EMBEDDINGS = None
+
+CATEGORY_TEXTS = {
+    "Tech & Systems": "software development development programming development engineering python code database web development neural network systems",
+    "Philosophy & Reflection": "philosophy reflection mind consciousness morality exist self introspection reflection",
+    "Business & Strategy": "business product marketing finance startup growth client strategy entrepreneurship metric",
+    "Art & Design": "art design creative drawing music aesthetics layout typography painting style",
+    "Science & Nature": "science space nature physics astronomy ecology biology chemistry star planet environment"
+}
+
+async def get_category_embeddings() -> Dict[str, List[float]]:
+    global _CATEGORY_EMBEDDINGS
+    if _CATEGORY_EMBEDDINGS is None:
+        _CATEGORY_EMBEDDINGS = {}
+        for cat, text in CATEGORY_TEXTS.items():
+            _CATEGORY_EMBEDDINGS[cat] = await embed_text(text)
+    return _CATEGORY_EMBEDDINGS
+
+async def determine_category(embedding: List[float]) -> str:
+    if not embedding:
+        return "General & Other"
+    
+    import numpy as np
+    cat_embs = await get_category_embeddings()
+    emb_np = np.array(embedding)
+    
+    best_cat = "General & Other"
+    best_sim = -1.0
+    
+    for cat, cat_emb in cat_embs.items():
+        cat_np = np.array(cat_emb)
+        norm_emb = np.linalg.norm(emb_np)
+        norm_cat = np.linalg.norm(cat_np)
+        if norm_emb > 0 and norm_cat > 0:
+            sim = np.dot(emb_np, cat_np) / (norm_emb * norm_cat)
+            if sim > best_sim:
+                best_sim = sim
+                best_cat = cat
+                
+    if best_sim < 0.2:
+        return "General & Other"
+        
+    return best_cat
+
+

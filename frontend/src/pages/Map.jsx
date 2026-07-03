@@ -29,7 +29,7 @@ const SOURCE_ICONS = {
    – Every item connects to ALL its hubs (ensures every hub has edges)
    – No item→item edges (no spaghetti)
    ══════════════════════════════════════════════════════════════════════════ */
-function buildGraph(items, W = 900, H = 600) {
+function buildGraph(items, W = 900, H = 600, tagPortraits = {}) {
   if (!items || items.length === 0) return { nodes: [], edges: [] };
 
   /* Tag buckets */
@@ -57,6 +57,7 @@ function buildGraph(items, W = 900, H = 600) {
       const daysSince = lastActivityAt.getTime() > 0
         ? Math.floor((Date.now() - lastActivityAt.getTime()) / 86400000)
         : 999;
+      const portrait = tagPortraits[tag] || {};
       hubNodes.push({
         id:             -(seq++),
         title:          tag,
@@ -64,13 +65,15 @@ function buildGraph(items, W = 900, H = 600) {
         type:           'hub',
         source_type:    'hub',
         tags:           [],
-        summary:        `${memberIds.length} signals`,
+        summary:        portrait.description || `${memberIds.length} signals`,
         memberCount:    memberIds.length,
         source_url:     '',
         created_at:     new Date().toISOString(),
         lastActivityAt: lastActivityAt.toISOString(),
         daysSince,
         _members:       memberIds,
+        icon:           portrait.icon || null,
+        description:    portrait.description || null,
       });
     });
 
@@ -151,7 +154,8 @@ function HubPanel({ hub, memberItems, onItemSelect, onClose }) {
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent-gold)', letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 6 }}>
               Knowledge Cluster
             </div>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, color: '#F0EDE8', letterSpacing: '-0.03em', lineHeight: 1.1, textTransform: 'capitalize', margin: 0 }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, color: '#F0EDE8', letterSpacing: '-0.03em', lineHeight: 1.1, textTransform: 'capitalize', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {hub.icon && <span style={{ fontSize: '1.4rem' }}>{hub.icon}</span>}
               {hub.title}
             </h2>
           </div>
@@ -162,6 +166,11 @@ function HubPanel({ hub, memberItems, onItemSelect, onClose }) {
             ×
           </button>
         </div>
+        {hub.description && (
+          <p style={{ margin: '8px 0 0', fontFamily: 'var(--font-body)', fontSize: 11, color: 'rgba(240, 237, 232, 0.65)', lineHeight: 1.4, fontStyle: 'italic' }}>
+            {hub.description}
+          </p>
+        )}
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginTop: 8 }}>
           {hub.memberCount} signals grouped inside
         </div>
@@ -219,6 +228,9 @@ function HubPanel({ hub, memberItems, onItemSelect, onClose }) {
 export default function MapPage() {
   const [items,        setItems]        = useState([]);
   const [graphNodes,   setGraphNodes]   = useState([]);
+  const [tagPortraits, setTagPortraits] = useState({});
+  const [pulseScore,   setPulseScore]   = useState(null);
+  const [showPulseInfo, setShowPulseInfo] = useState(false);
   const [graphEdges,   setGraphEdges]   = useState([]);
   const [activeCandidates, setActiveCandidates] = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -339,8 +351,33 @@ export default function MapPage() {
         if (batch.length < 50) break;
         page++;
       }
+      // Fetch tag portraits
+      let portraits = {};
+      try {
+        const portRes = await fetch('/api/tags/portraits', { credentials: 'include' });
+        if (portRes.ok) {
+          portraits = await portRes.json();
+          setTagPortraits(portraits);
+        }
+      } catch (pErr) {
+        console.error('[Map] failed to fetch tag portraits:', pErr);
+      }
+
+      // Fetch user profile pulse score
+      try {
+        const profRes = await fetch('/api/user/profile', { credentials: 'include' });
+        if (profRes.ok) {
+          const profData = await profRes.json();
+          if (profData && profData.pulse_score !== undefined) {
+            setPulseScore(profData.pulse_score);
+          }
+        }
+      } catch (profErr) {
+        console.error('[Map] failed to fetch profile pulse score:', profErr);
+      }
+
       setItems(all);
-      const { nodes, edges } = buildGraph(all, window.innerWidth, window.innerHeight);
+      const { nodes, edges } = buildGraph(all, window.innerWidth, window.innerHeight, portraits);
       setGraphNodes(nodes);
       setGraphEdges(edges);
       
@@ -476,9 +513,51 @@ export default function MapPage() {
             <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: '18px', fontWeight: 700, color: '#F0EDE8', letterSpacing: '-0.02em' }}>
               Knowledge Constellation
             </h1>
-            <p style={{ margin: '2px 0 0 0', fontFamily: 'var(--font-mono)', fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              {items.length} Signals Catalogued
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '2px', flexWrap: 'wrap' }}>
+              <p style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                {items.length} Signals Catalogued
+              </p>
+              {pulseScore !== null && (
+                <>
+                  <span style={{ fontSize: '9px', color: 'rgba(207,163,101,0.2)' }}>|</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', color: 'var(--accent-gold)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                      PULSE:
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700, color: '#ffffff' }}>
+                      {pulseScore}%
+                    </span>
+                    <div style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: '#CFA365',
+                      boxShadow: '0 0 6px #CFA365',
+                      animation: 'pulseGlow 1.6s infinite ease-in-out',
+                    }} />
+                    <button
+                      onClick={() => { AudioEngine.playClick(); setShowPulseInfo(true); }}
+                      style={{
+                        background: 'none', border: 'none', color: 'rgba(207,163,101,0.5)',
+                        fontFamily: 'var(--font-mono)', fontSize: '11px', cursor: 'pointer',
+                        padding: '0 2px', display: 'flex', alignItems: 'center', transition: 'color 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-gold)'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(207,163,101,0.5)'}
+                      title="Diagnostics Info"
+                    >
+                      ⓘ
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            <style>{`
+              @keyframes pulseGlow {
+                0%, 100% { transform: scale(1); opacity: 0.65; box-shadow: 0 0 3px #CFA365; }
+                50% { transform: scale(1.25); opacity: 1; box-shadow: 0 0 7px #CFA365; }
+              }
+            `}</style>
           </div>
         </div>
 
@@ -580,7 +659,10 @@ export default function MapPage() {
                 animation: 'burstBannerIn 0.3s cubic-bezier(0.16,1,0.3,1) forwards'
               }}>
                 <span style={{ fontFamily:'var(--font-mono)', fontSize:9, color:'rgba(207,163,101,0.5)', letterSpacing:'0.14em', textTransform:'uppercase' }}>CLUSTER</span>
-                <span style={{ fontFamily:'var(--font-display)', fontSize:'1rem', fontWeight:700, color:'#F0EDE8', textTransform:'capitalize' }}>{selectedHub.title}</span>
+                <span style={{ fontFamily:'var(--font-display)', fontSize:'1rem', fontWeight:700, color:'#F0EDE8', textTransform:'capitalize', display: 'flex', alignItems: 'center' }}>
+                  {selectedHub.icon && <span style={{ marginRight: '0.4rem' }}>{selectedHub.icon}</span>}
+                  {selectedHub.title}
+                </span>
                 <span style={{ fontFamily:'var(--font-mono)', fontSize:9, color:'rgba(207,163,101,0.6)', letterSpacing:'0.08em' }}>· {selectedHub.memberCount} signals</span>
                 {selectedHub.daysSince != null && (
                   <span style={{ fontFamily:'var(--font-mono)', fontSize:8, color: selectedHub.daysSince < 1 ? '#8FA382' : selectedHub.daysSince < 7 ? 'rgba(207,163,101,0.8)' : 'rgba(138,133,130,0.5)', letterSpacing:'0.08em' }}>
@@ -635,7 +717,7 @@ export default function MapPage() {
 
             {/* 1. Desktop Bottom-Right Camera & Simulation Control panel */}
             <div className="map-control-panel desktop-only-controls" style={{ 
-              position: 'absolute', bottom: 20, right: 20, zIndex: 20,
+              position: 'absolute', bottom: 20, right: 110, zIndex: 20,
               background: 'rgba(10,9,15,0.78)', backdropFilter: 'blur(20px)', border: '1px solid rgba(207,163,101,0.1)',
               borderRadius: '12px', padding: '0.65rem', display: 'flex', gap: '0.5rem'
             }}>
@@ -923,7 +1005,11 @@ export default function MapPage() {
                           flex: 1,
                           paddingRight: 8,
                           lineHeight: 1.3,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem'
                         }}>
+                          {hub.icon && <span style={{ fontSize: '1rem' }}>{hub.icon}</span>}
                           {hub.title}
                         </span>
                         <span style={{
@@ -998,7 +1084,8 @@ export default function MapPage() {
                         Knowledge Cluster
                       </div>
                       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem' }}>
-                        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.75rem', fontWeight: 800, color: '#F0EDE8', letterSpacing: '-0.04em', lineHeight: 1, margin: 0, textTransform: 'capitalize' }}>
+                        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.75rem', fontWeight: 800, color: '#F0EDE8', letterSpacing: '-0.04em', lineHeight: 1, margin: 0, textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {selectedHub.icon && <span style={{ fontSize: '1.5rem' }}>{selectedHub.icon}</span>}
                           {selectedHub.title}
                         </h2>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, flexShrink: 0 }}>
@@ -1008,6 +1095,11 @@ export default function MapPage() {
                           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'rgba(207,163,101,0.45)', letterSpacing: '0.1em' }}>signals</span>
                         </div>
                       </div>
+                      {selectedHub.description && (
+                        <p style={{ margin: '0 0 1rem', fontFamily: 'var(--font-body)', fontSize: 12, color: 'rgba(240, 237, 232, 0.68)', lineHeight: 1.45, fontStyle: 'italic' }}>
+                          {selectedHub.description}
+                        </p>
+                      )}
 
                       {/* Type distribution bar */}
                       <div style={{ marginBottom: '0.75rem' }}>
@@ -1128,6 +1220,96 @@ export default function MapPage() {
       {error && (
         <div style={{ position:'absolute', bottom:'4rem', left:'50%', transform:'translateX(-50%)', background:'rgba(160,60,60,0.12)', border:'1px solid rgba(160,60,60,0.3)', borderRadius:8, padding:'0.625rem 1.25rem', fontFamily:'var(--font-mono)', fontSize:11, color:'#D97070', zIndex:30, display:'flex', alignItems:'center', gap:'0.75rem' }}>
           {error}<button onClick={fetchData} style={{ color:'var(--accent-gold)', background:'none', border:'none', cursor:'pointer', fontFamily:'var(--font-mono)', fontSize:10 }}>↺</button>
+        </div>
+      )}
+
+      {/* ── Pulse & Spaced Repetition Info Modal ── */}
+      {showPulseInfo && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(5,4,8,0.72)', backdropFilter: 'blur(10px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: 'rgba(12,11,18,0.96)', border: '1px solid rgba(207,163,101,0.22)',
+            borderRadius: '16px', padding: '2rem', maxWidth: '480px', width: '90%',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(207,163,101,0.03)',
+            animation: 'scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            position: 'relative'
+          }}>
+            <button
+              onClick={() => { AudioEngine.playClick(); setShowPulseInfo(false); }}
+              style={{
+                position: 'absolute', top: '1rem', right: '1.25rem', background: 'none', border: 'none',
+                color: 'rgba(255,255,255,0.4)', fontSize: '1.5rem', cursor: 'pointer', outline: 'none'
+              }}
+            >
+              ×
+            </button>
+
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', color: 'var(--accent-gold)', letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: '6px' }}>
+              System Diagnostics
+            </div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, color: '#F0EDE8', margin: '0 0 1.25rem 0', letterSpacing: '-0.02em' }}>
+              Pulse & Recall Guide
+            </h2>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 6px 0' }}>
+                  What is Cognitive Pulse?
+                </h3>
+                <p style={{ margin: 0, fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  A dynamic score (0-100%) tracking your cognitive synergy. <strong>100% Pulse</strong> represents peak synchronization: you have a high density of saved knowledge signals, a high success rate on your active recall quizzes, and zero days of mental inactivity.
+                </p>
+              </div>
+
+              <div>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 6px 0' }}>
+                  Memory Retention Glows (Spaced Repetition)
+                </h3>
+                <p style={{ margin: '0 0 8px 0', fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  Individual node glows reflect your memory retention strength, calculated using the <strong>SM-2 algorithm</strong>:
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3498db', marginTop: '4px', boxShadow: '0 0 6px #3498db' }} />
+                    <div>
+                      <strong style={{ fontSize: '11px', color: '#ffffff' }}>Indigo Glow (Stable Retention)</strong>
+                      <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)' }}>Signals recently saved or successfully recalled (interval &ge; 7 days). Keep them in mind!</p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#e67e22', marginTop: '4px', boxShadow: '0 0 6px #e67e22' }} />
+                    <div>
+                      <strong style={{ fontSize: '11px', color: '#ffffff' }}>Amber Halo (Decaying Memory)</strong>
+                      <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)' }}>Signals that are cooling down or have not been reviewed for &gt; 2 days. Take a quiz to refresh your memory!</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => { AudioEngine.playClick(); setShowPulseInfo(false); }}
+              style={{
+                marginTop: '1.75rem', width: '100%', padding: '0.625rem', background: 'rgba(207,163,101,0.08)',
+                border: '1px solid var(--accent-gold)', borderRadius: '8px', color: 'var(--accent-gold)',
+                fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 600, cursor: 'pointer',
+                transition: 'all 0.2s', outline: 'none'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(207,163,101,0.15)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(207,163,101,0.08)'; }}
+            >
+              Acknowledge System Diagnostics
+            </button>
+          </div>
+          <style>{`
+            @keyframes scaleIn {
+              from { transform: scale(0.95); opacity: 0; }
+              to { transform: scale(1); opacity: 1; }
+            }
+          `}</style>
         </div>
       )}
     </div>

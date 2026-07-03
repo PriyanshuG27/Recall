@@ -250,19 +250,21 @@ def test_quiz_command_success(client, db_state):
         assert "inline_keyboard" in json_payload["reply_markup"]
         
         ikb = json_payload["reply_markup"]["inline_keyboard"]
-        assert len(ikb) == 2  # 2x2 grid rows count
-        assert len(ikb[0]) == 2
-        assert len(ikb[1]) == 2
+        assert len(ikb) == 4  # 4x1 vertical layout
+        assert len(ikb[0]) == 1
+        assert len(ikb[1]) == 1
+        assert len(ikb[2]) == 1
+        assert len(ikb[3]) == 1
         
         # Verify text prefixes and callback format
         assert ikb[0][0]["text"] == "A. O(1)"
         assert ikb[0][0]["callback_data"] == "quiz:100:0"
-        assert ikb[0][1]["text"] == "B. O(log N)"
-        assert ikb[0][1]["callback_data"] == "quiz:100:1"
-        assert ikb[1][0]["text"] == "C. O(N)"
-        assert ikb[1][0]["callback_data"] == "quiz:100:2"
-        assert ikb[1][1]["text"] == "D. O(N log N)"
-        assert ikb[1][1]["callback_data"] == "quiz:100:3"
+        assert ikb[1][0]["text"] == "B. O(log N)"
+        assert ikb[1][0]["callback_data"] == "quiz:100:1"
+        assert ikb[2][0]["text"] == "C. O(N)"
+        assert ikb[2][0]["callback_data"] == "quiz:100:2"
+        assert ikb[3][0]["text"] == "D. O(N log N)"
+        assert ikb[3][0]["callback_data"] == "quiz:100:3"
 
 def test_quiz_command_empty(client, db_state, mock_telegram_ack):
     # Clear due quizzes
@@ -405,7 +407,7 @@ def test_callback_quiz_next_available(client, db_state):
         
         assert json_payload["text"] == "<b>Which index is used for GIN trigram?</b>"
         ikb = json_payload["reply_markup"]["inline_keyboard"]
-        assert len(ikb) == 2
+        assert len(ikb) == 4
         assert ikb[0][0]["text"] == "A. B-tree"
         assert ikb[0][0]["callback_data"] == "quiz:101:0"
 

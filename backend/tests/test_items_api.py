@@ -139,13 +139,13 @@ def test_get_items_basic_pagination(client):
     # Executed[0] is user lookup. Executed[1] is COUNT.
     count_query, count_params = current_cursor.executed[1]
     assert "SELECT COUNT(*)" in count_query
-    assert "WHERE user_id = %s" in count_query
+    assert "WHERE i.user_id = %s" in count_query
     assert count_params == (42,)
     
     # Executed[2] is items query.
     items_query, items_params = current_cursor.executed[2]
-    assert "SELECT id, title, summary" in items_query
-    assert "ORDER BY created_at DESC" in items_query
+    assert "SELECT i.id, i.title, i.summary" in items_query
+    assert "ORDER BY i.created_at DESC" in items_query
     assert "LIMIT %s OFFSET %s" in items_query
     assert items_params == (42, 5, 5)
 
@@ -175,11 +175,11 @@ def test_get_items_filters_composition(client):
     # Executed[0] is user lookup. Executed[1] is COUNT.
     count_query, count_params = current_cursor.executed[1]
     
-    assert "WHERE user_id = %s" in count_query
-    assert "AND source_type = %s" in count_query
-    assert "AND %s = ANY(tags)" in count_query
-    assert "AND created_at >= %s" in count_query
-    assert "AND created_at <= %s" in count_query
+    assert "WHERE i.user_id = %s" in count_query
+    assert "AND i.source_type = %s" in count_query
+    assert "AND %s = ANY(i.tags)" in count_query
+    assert "AND i.created_at >= %s" in count_query
+    assert "AND i.created_at <= %s" in count_query
     
     expected_params = (
         42,

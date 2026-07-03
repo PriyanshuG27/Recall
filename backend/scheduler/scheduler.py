@@ -1944,6 +1944,273 @@ async def mid_graph_re_engagement_dispatcher() -> None:
         logger.error("mid_graph_re_engagement_dispatcher background job failed: %s", e, exc_info=True)
 
 
+async def spaced_repetition_nudge_dispatcher() -> None:
+    """Daily background job to nudge users who haven't reviewed memory cards in 72 hours."""
+    try:
+        pool = await get_pool()
+        from backend.services.redis_client import redis
+        
+        async with pool.connection() as conn:
+            await conn.execute("SET statement_timeout = '30s'")
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT u.id, u.telegram_chat_id
+                    FROM users u
+                    WHERE u.telegram_chat_id IS NOT NULL
+                      AND (
+                          (SELECT MAX(answered_at) FROM quiz_answers WHERE user_id = u.id) IS NULL
+                          OR (SELECT MAX(answered_at) FROM quiz_answers WHERE user_id = u.id) <= CURRENT_TIMESTAMP - INTERVAL '72 hours'
+                      )
+                      AND (
+                          SELECT COUNT(*) FROM quizzes WHERE user_id = u.id AND next_review <= CURRENT_DATE
+                      ) > 0;
+                    """
+                )
+                users_to_nudge = await cur.fetchall()
+
+        for u_id, chat_id in users_to_nudge:
+            nudge_key = f"sr_nudge_sent:{u_id}"
+            already_sent = await redis.get(nudge_key)
+            if already_sent:
+                continue
+                
+            msg = (
+                "🧠 **Your graph is cooling down!**\n\n"
+                "You haven't reviewed your memory cards in 72 hours. "
+                "A quick 2-minute quiz will warm up your retention glows."
+            )
+            reply_markup = {
+                "inline_keyboard": [
+                    [{"text": "Start Review ⚡", "callback_data": "quiz:next"}]
+                ]
+            }
+            
+            # Rate limit to once every 7 days
+            await redis.setex(nudge_key, 86400 * 7, "1")
+            
+            success = await send_telegram_message(str(chat_id), msg, reply_markup=reply_markup)
+            if success:
+                logger.info("Sent spaced repetition nudge to user_id=%d, chat_id=%s", u_id, chat_id)
+
+    except Exception as e:
+        logger.error("spaced_repetition_nudge_dispatcher background job failed: %s", e, exc_info=True)
+
+
+async def send_telegram_document(
+    chat_id: str,
+    file_bytes: bytes,
+    filename: str,
+    caption: Optional[str] = None
+) -> bool:
+    """Helper to send files (like SVGs) to Telegram via sendDocument, redacting sensitive tokens in logs."""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
+    files = {
+        "document": (filename, file_bytes, "image/svg+xml")
+    }
+    data = {
+        "chat_id": chat_id
+    }
+    if caption:
+        data["caption"] = caption
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, data=data, files=files, timeout=15.0)
+            resp.raise_for_status()
+            return True
+    except Exception as e:
+        err_msg = str(e).replace(settings.TELEGRAM_BOT_TOKEN, "[REDACTED_BOT_TOKEN]")
+        logger.error("Failed to send Telegram document to chat_id %s: %s", chat_id, err_msg)
+        return False
+
+
+async def send_telegram_photo(
+    chat_id: str,
+    photo_bytes: bytes,
+    filename: str,
+    caption: Optional[str] = None,
+    reply_markup: Optional[Dict[str, Any]] = None
+) -> bool:
+    """Helper to send photo files (like PNG/JPG) to Telegram via sendPhoto, redacting sensitive tokens in logs."""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendPhoto"
+    files = {
+        "photo": (filename, photo_bytes, "image/png")
+    }
+    data = {
+        "chat_id": chat_id
+    }
+    if caption:
+        data["caption"] = caption
+    if reply_markup:
+        import json
+        data["reply_markup"] = json.dumps(reply_markup)
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, data=data, files=files, timeout=15.0)
+            resp.raise_for_status()
+            return True
+    except Exception as e:
+        err_msg = str(e).replace(settings.TELEGRAM_BOT_TOKEN, "[REDACTED_BOT_TOKEN]")
+        logger.error("Failed to send Telegram photo to chat_id %s: %s", chat_id, err_msg)
+        return False
+
+
+async def weekly_mind_map_dispatcher() -> None:
+    """Weekly background job to generate and send SVG mind maps of user constellations."""
+    try:
+        pool = await get_pool()
+        from backend.services.mind_map_service import generate_weekly_svg_mind_map
+        import fitz
+        
+        users_to_process = []
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT id, telegram_chat_id FROM users WHERE telegram_chat_id IS NOT NULL;")
+                users_to_process = await cur.fetchall()
+
+        sem = asyncio.Semaphore(3)
+
+        async def process_one(user_id, chat_id):
+            async with sem:
+                try:
+                    async with pool.connection() as conn:
+                        async with conn.cursor() as cur:
+                            svg_str = await generate_weekly_svg_mind_map(cur, user_id)
+                            
+                    # Convert SVG to High-Resolution PNG via PyMuPDF
+                    doc = fitz.open(stream=svg_str.encode("utf-8"), filetype="svg")
+                    page = doc[0]
+                    pix = page.get_pixmap(dpi=300) # 300 DPI for high quality rendering
+                    png_bytes = pix.tobytes("png")
+                    
+                    caption = "🎨 Here is your weekly Recall Constellation Mind Map! Tap to explore your knowledge clusters."
+                    reply_markup = {
+                        "inline_keyboard": [
+                            [{"text": "Review Constellation ⚡", "callback_data": "quiz:next"}]
+                        ]
+                    }
+                    
+                    success = await send_telegram_photo(
+                        chat_id=str(chat_id),
+                        photo_bytes=png_bytes,
+                        filename="weekly_mind_map.png",
+                        caption=caption,
+                        reply_markup=reply_markup
+                    )
+                    if success:
+                        logger.info("Sent weekly mind map to user_id=%d, chat_id=%s", user_id, chat_id)
+                except Exception as ex:
+                    logger.error("Failed to process weekly mind map for user_id=%d: %s", user_id, ex)
+
+        await asyncio.gather(*(process_one(uid, cid) for uid, cid in users_to_process))
+
+    except Exception as e:
+        logger.error("weekly_mind_map_dispatcher background job failed: %s", e, exc_info=True)
+
+
+async def monthly_memory_rhythm_scanner() -> None:
+    """Monthly background job to analyze user tag shifts and send progress summaries."""
+    try:
+        pool = await get_pool()
+        
+        users_to_process = []
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT id, telegram_chat_id FROM users WHERE telegram_chat_id IS NOT NULL;")
+                users_to_process = await cur.fetchall()
+
+        sem = asyncio.Semaphore(3)
+
+        async def process_one(user_id, chat_id):
+            async with sem:
+                try:
+                    # 1. Fetch tags from last 30 days
+                    async with pool.connection() as conn:
+                        async with conn.cursor() as cur:
+                            await cur.execute(
+                                """
+                                SELECT unnest(tags) as tag, COUNT(*) as count
+                                FROM items
+                                WHERE user_id = %s AND created_at >= NOW() - INTERVAL '30 days' AND tags IS NOT NULL
+                                GROUP BY tag;
+                                """,
+                                (user_id,)
+                            )
+                            tags_30_rows = await cur.fetchall()
+                            
+                            # 2. Fetch tags from last 90 days
+                            await cur.execute(
+                                """
+                                SELECT unnest(tags) as tag, COUNT(*) as count
+                                FROM items
+                                WHERE user_id = %s AND created_at >= NOW() - INTERVAL '90 days' AND tags IS NOT NULL
+                                GROUP BY tag;
+                                """,
+                                (user_id,)
+                            )
+                            tags_90_rows = await cur.fetchall()
+
+                    t30 = {tag: count for tag, count in tags_30_rows}
+                    t90 = {tag: count for tag, count in tags_90_rows}
+                    
+                    if len(t90) < 2:
+                        msg = (
+                            "📅 **Monthly Memory Rhythm**\n\n"
+                            "You are building your graph steadily! "
+                            "Keep saving new items and tagging them to track how your focus shifts over time."
+                        )
+                        await send_telegram_message(str(chat_id), msg, parse_mode="HTML")
+                        return
+
+                    sum30 = sum(t30.values()) or 1
+                    sum90 = sum(t90.values()) or 1
+                    
+                    prop30 = {tag: count / sum30 for tag, count in t30.items()}
+                    prop90 = {tag: count / sum90 for tag, count in t90.items()}
+                    
+                    surging = []
+                    cooling = []
+                    
+                    for tag in prop30:
+                        diff = prop30[tag] - prop90.get(tag, 0.0)
+                        if diff > 0.02:
+                            surging.append((tag, diff))
+                            
+                    for tag in prop90:
+                        diff = prop30.get(tag, 0.0) - prop90[tag]
+                        if diff < -0.02:
+                            cooling.append((tag, diff))
+                            
+                    surging = [t[0] for t in sorted(surging, key=lambda x: -x[1])[:3]]
+                    cooling = [t[0] for t in sorted(cooling, key=lambda x: x[1])[:3]]
+                    
+                    if not surging and not cooling:
+                        msg = (
+                            "📅 **Monthly Memory Rhythm**\n\n"
+                            "Your semantic interests remained stable this month. "
+                            "You are maintaining a balanced cognitive distribution across your topics!"
+                        )
+                    else:
+                        msg = "📅 **Your Monthly Memory Rhythm is Shifting!**\n\n"
+                        if surging:
+                            surging_str = ", ".join(f"#{t}" for t in surging)
+                            msg += f"🔥 *Surging Themes:* {surging_str}\n"
+                        if cooling:
+                            cooling_str = ", ".join(f"#{t}" for t in cooling)
+                            msg += f"❄️ *Cooling Themes:* {cooling_str}\n"
+                        msg += "\nYour mind constellation is alive. Keep saving and connecting ideas! 💭"
+
+                    await send_telegram_message(str(chat_id), msg, parse_mode="Markdown")
+                    logger.info("Sent monthly memory rhythm to user_id=%d, chat_id=%s", user_id, chat_id)
+                except Exception as ex:
+                    logger.error("Failed to process monthly memory rhythm for user_id=%d: %s", user_id, ex)
+
+        await asyncio.gather(*(process_one(uid, cid) for uid, cid in users_to_process))
+
+    except Exception as e:
+        logger.error("monthly_memory_rhythm_scanner background job failed: %s", e, exc_info=True)
+
+
 async def near_miss_calibration() -> None:
     """
     Weekly background job to calibrate each user's near-miss similarity threshold.
@@ -2239,6 +2506,154 @@ async def recall_moment_dispatcher() -> None:
             logger.error("Failed to run Recall Moment dispatcher for user %d: %s", user_id, moment_err)
 
 
+async def tag_portraits_generator() -> None:
+    """Generate thematic names, descriptions and icons for active tag-based communities."""
+    pool = await get_pool()
+    if not pool:
+        logger.error("No database pool available for tag_portraits_generator.")
+        return
+
+    from backend.services.ai_cascade import AICascade
+    ai_cascade = AICascade()
+
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            # Get list of all users
+            await cur.execute("SELECT id FROM users;")
+            user_rows = await cur.fetchall()
+            user_ids = [row[0] for row in user_rows]
+
+    for user_id in user_ids:
+        try:
+            # Fetch user's items
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        SELECT id, title, summary, tags 
+                        FROM items 
+                        WHERE user_id = %s;
+                        """,
+                        (user_id,)
+                    )
+                    items = await cur.fetchall()
+            
+            # Map tags to their member item summaries/titles
+            tag_buckets = {}
+            for item_id, title, summary, tags in items:
+                if not tags:
+                    continue
+                for tag in tags:
+                    tag_buckets.setdefault(tag, []).append(f"Title: {title or 'Untitled'}\nSummary: {summary or 'No summary'}")
+
+            # Identify active tags (>= 3 items)
+            active_tags = {tag: details for tag, details in tag_buckets.items() if len(details) >= 3}
+            if not active_tags:
+                continue
+
+            for tag, member_texts in active_tags.items():
+                # Check if portrait already exists
+                async with pool.connection() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            "SELECT id FROM tag_portraits WHERE user_id = %s AND tag = %s;",
+                            (user_id, tag)
+                        )
+                        exists = await cur.fetchone()
+                
+                # If it already exists, skip it (saves cost/calls)
+                if exists:
+                    continue
+
+                # Format summaries for AI
+                context_str = "\n---\n".join(member_texts[:5])
+                if len(context_str) > 1500:
+                    context_str = context_str[:1500] + "..."
+
+                prompt = (
+                    f"Create a short thematic description and suggest a single emoji representing a cluster of notes about the topic '{tag}'.\n"
+                    f"Here are some examples of notes in this cluster:\n{context_str}\n\n"
+                    "Respond with a JSON object containing:\n"
+                    "{\n"
+                    "  \"description\": \"A 1-2 sentence description explaining the core theme of these notes.\",\n"
+                    "  \"icon\": \"A single thematic emoji representing this cluster\"\n"
+                    "}"
+                )
+
+                try:
+                    ai_res = await ai_cascade.call_llm(prompt)
+                    import json
+                    import re
+
+                    description = "No description generated."
+                    icon = "🧠"
+
+                    if isinstance(ai_res, dict):
+                        description = ai_res.get("description") or description
+                        icon = ai_res.get("icon") or icon
+                    elif isinstance(ai_res, str):
+                        match = re.search(r"\{.*\}", ai_res, re.DOTALL)
+                        if match:
+                            try:
+                                parsed = json.loads(match.group(0))
+                                description = parsed.get("description") or description
+                                icon = parsed.get("icon") or icon
+                            except Exception:
+                                pass
+                        if description == "No description generated.":
+                            description = ai_res[:200]
+
+                    icon_match = re.search(r"[\U00010000-\U0010ffff\u2600-\u27bf]", icon)
+                    if icon_match:
+                        icon = icon_match.group(0)
+                    else:
+                        icon = icon[:2]
+
+                    async with pool.connection() as conn:
+                        async with conn.cursor() as cur:
+                            await cur.execute(
+                                """
+                                INSERT INTO tag_portraits (user_id, tag, description, icon)
+                                VALUES (%s, %s, %s, %s)
+                                ON CONFLICT (user_id, tag) DO UPDATE
+                                SET description = EXCLUDED.description,
+                                    icon = EXCLUDED.icon;
+                                """,
+                                (user_id, tag, description.strip(), icon.strip())
+                            )
+                            await conn.commit()
+                except Exception as ai_ex:
+                    logger.error("AI portrait generation failed for user %d, tag %s: %s", user_id, tag, ai_ex)
+
+        except Exception as u_ex:
+            logger.error("Failed to run tag portraits generator for user %d: %s", user_id, u_ex)
+
+
+async def daily_pulse_updater() -> None:
+    """Calculate and update user pulse scores for all users to reflect activity decay."""
+    pool = await get_pool()
+    if not pool:
+        logger.error("No database pool available for daily_pulse_updater.")
+        return
+
+    from backend.services.pulse_service import update_user_pulse
+
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id FROM users;")
+            rows = await cur.fetchall()
+            user_ids = [r[0] for r in rows]
+
+    for user_id in user_ids:
+        try:
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await update_user_pulse(cur, user_id)
+                    await conn.commit()
+        except Exception as e:
+            logger.error("Failed to update daily pulse for user %d: %s", user_id, e)
+
+
 # ---------------------------------------------------------------------------
 # Scheduler Manager
 # ---------------------------------------------------------------------------
@@ -2386,9 +2801,49 @@ async def start_scheduler(app=None) -> None:
         id="monthly_forward_hook",
         misfire_grace_time=60
     )
+
+    # 18. tag_portraits_generator (daily at 03:00 UTC)
+    _scheduler.add_job(
+        tag_portraits_generator,
+        trigger=CronTrigger(hour=3, minute=0, timezone="UTC"),
+        id="tag_portraits_generator",
+        misfire_grace_time=60
+    )
+
+    # 19. daily_pulse_updater (daily at 04:00 UTC)
+    _scheduler.add_job(
+        daily_pulse_updater,
+        trigger=CronTrigger(hour=4, minute=0, timezone="UTC"),
+        id="daily_pulse_updater",
+        misfire_grace_time=60
+    )
+
+    # 20. spaced_repetition_nudge_dispatcher (daily at 11:00 UTC)
+    _scheduler.add_job(
+        spaced_repetition_nudge_dispatcher,
+        trigger=CronTrigger(hour=11, minute=0, timezone="UTC"),
+        id="spaced_repetition_nudge_dispatcher",
+        misfire_grace_time=60
+    )
+
+    # 21. weekly_mind_map_dispatcher (weekly on Sunday at 18:00 UTC)
+    _scheduler.add_job(
+        weekly_mind_map_dispatcher,
+        trigger=CronTrigger(day_of_week="sun", hour=18, minute=0, timezone="UTC"),
+        id="weekly_mind_map_dispatcher",
+        misfire_grace_time=60
+    )
+
+    # 22. monthly_memory_rhythm_scanner (monthly on the 1st at 06:00 UTC)
+    _scheduler.add_job(
+        monthly_memory_rhythm_scanner,
+        trigger=CronTrigger(day=1, hour=6, minute=0, timezone="UTC"),
+        id="monthly_memory_rhythm_scanner",
+        misfire_grace_time=60
+    )
     
     _scheduler.start()
-    logger.info("Background job scheduler started successfully with all 17 jobs.")
+    logger.info("Background job scheduler started successfully with all 22 jobs.")
 
 
 async def stop_scheduler() -> None:

@@ -1275,9 +1275,48 @@ export default function Profile() {
       `}</style>
 
       {/* Title Header */}
-      <header className="observatory-header">
-        <h1>Cognitive Observatory</h1>
-        <p>identity · trajectories · structures</p>
+      <header className="observatory-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h1>Cognitive Observatory</h1>
+          <p>identity · trajectories · structures</p>
+        </div>
+        {profile && profile.pulse_score !== undefined && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            background: 'rgba(207,163,101,0.02)',
+            border: '1px solid rgba(207,163,101,0.12)',
+            borderRadius: '12px',
+            padding: '8px 16px',
+            boxShadow: '0 0 15px rgba(207,163,101,0.03)',
+            animation: 'fadeIn 0.5s ease',
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', color: 'var(--accent-gold)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                Cognitive Pulse
+              </span>
+              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#ffffff' }}>
+                {profile.pulse_score}%
+              </span>
+            </div>
+            {/* Minimal Pulse Indicator */}
+            <div style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              background: '#CFA365',
+              boxShadow: '0 0 8px #CFA365',
+              animation: 'pulseGlow 1.6s infinite ease-in-out',
+            }} />
+            <style>{`
+              @keyframes pulseGlow {
+                0%, 100% { transform: scale(1); opacity: 0.65; box-shadow: 0 0 4px #CFA365; }
+                50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 10px #CFA365; }
+              }
+            `}</style>
+          </div>
+        )}
       </header>
 
       {/* Row 1: Stepper Milestones & Direction */}

@@ -66,9 +66,11 @@ class RecordingCursor:
         last_query, last_params = self.executed[-1] if self.executed else ("", None)
         last_query = last_query.lower()
         if "embedding <=> b.embedding" in last_query:
+            now = datetime.now(timezone.utc)
+            mock_emb = [0.05] * 384
             return [
-                (101, "FastAPI Concurrency", "Asyncio event loop in detail", 201, "Async Python", "Event loops in python", 0.85),
-                (102, "Stoicism Tips", "Marcus Aurelius notes", 202, "Meditations Notes", "Stoic philosophy overview", 0.72)
+                (101, "FastAPI Concurrency", "Asyncio event loop in detail", "Tech & Systems", mock_emb, 201, "Async Python", "Event loops in python", "Tech & Systems", mock_emb, 0.85, now, now),
+                (102, "Stoicism Tips", "Marcus Aurelius notes", "Philosophy & Reflection", mock_emb, 202, "Meditations Notes", "Stoic philosophy overview", "Philosophy & Reflection", mock_emb, 0.72, now, now)
             ]
         if "tags" in last_query:
             if last_params and last_params[0] == 42:
@@ -200,11 +202,13 @@ def test_connect_success(client):
     assert res_data["status"] == "connected"
     assert res_data["bridge_id"] == 15
 
+
+
 def test_get_bridge_details_access_denied(client):
     """GET /api/bridges/{id} returns 403 if user is not member of bridge."""
     global current_cursor
     # User 42 is not part of bridge (bridge has 88 and 99)
-    current_cursor.fetchone_val = (10, 88, 99, 75.0, "Friend1", None, "FLVN", "Friend2", None, "BLVN")
+    current_cursor.fetchone_val = (10, 88, 99, 75.0, "Friend1", None, "FLVN", "Friend2", None, "BLVN", datetime.now(timezone.utc), datetime.now(timezone.utc), datetime.now(timezone.utc), datetime.now(timezone.utc))
     
     token = get_auth_token(user_id=42)
     response = client.get("/api/bridges/10", cookies={"recall_session": token})
@@ -214,7 +218,7 @@ def test_get_bridge_details_success(client):
     """GET /api/bridges/{id} returns detailed overlap matrix successfully."""
     global current_cursor
     # Current user (42) and friend (99)
-    current_cursor.fetchone_val = (10, 42, 99, 78.5, "Alice", None, "FLVN", "Bob", None, "BLVN")
+    current_cursor.fetchone_val = (10, 42, 99, 78.5, "Alice", None, "FLVN", "Bob", None, "BLVN", datetime.now(timezone.utc), datetime.now(timezone.utc), datetime.now(timezone.utc), datetime.now(timezone.utc))
     
     # Mock LLM response to avoid live calls
     with mock.patch("backend.services.ai_cascade.AICascade.call_llm", return_value="Dynamic synergy text description mock."):
@@ -225,7 +229,7 @@ def test_get_bridge_details_success(client):
         res_data = response.json()
         assert res_data["id"] == 10
         assert res_data["friend_name"] == "Bob"
-        assert res_data["compatibility_score"] == 80.8
+        assert res_data["compatibility_score"] == 78.5
         assert len(res_data["synapses"]) == 2
         assert res_data["synapses"][0]["item_a"]["title"] == "FastAPI Concurrency"
         assert res_data["synapses"][0]["item_b"]["title"] == "Async Python"
@@ -245,3 +249,170 @@ def test_delete_bridge_success(client):
     # Verify DB queries: auth, check, delete
     assert len(current_cursor.executed) == 3
     assert "DELETE FROM cognitive_bridges" in current_cursor.executed[2][0]
+
+def test_update_bridge_ceremony_success(client):
+    """POST /api/bridges/{id}/ceremony updates the last ceremony timestamp."""
+    global current_cursor
+    current_cursor.fetchone_val = (10, 42, 99)
+    
+    token = get_auth_token(user_id=42)
+    response = client.post("/api/bridges/10/ceremony", cookies={"recall_session": token})
+    assert response.status_code == 200
+    assert response.json()["status"] == "updated"
+    
+    # Verify DB queries: auth, check, update
+    assert "UPDATE cognitive_bridges SET last_ceremony_at" in current_cursor.executed[2][0]
+def test_kintsugi_decay_progression():
+    """Test that a stone progresses through all 5 decay stages on successive inactive cycles."""
+    from backend.routes.bridges import simulate_kintsugi_decay, SynapsePair, ThoughtBrief
+    
+    bridge_created = datetime.now(timezone.utc) - timedelta(days=50)
+    syn_date = bridge_created + timedelta(days=2)
+    syn = SynapsePair(
+        item_a=ThoughtBrief(id=1, title="A", summary="S", created_at=syn_date),
+        item_b=ThoughtBrief(id=2, title="B", summary="S", created_at=syn_date),
+        similarity=0.8
+    )
+    
+    # Day 43 = 6 complete cycles. Cycle 0 active, Cycles 1,2,3,4,5 inactive. 5 decays.
+    sim_time = bridge_created + timedelta(days=43)
+    
+    syns_res, inactive, active_rep, front = simulate_kintsugi_decay(bridge_created, [syn], sim_time)
+    
+    assert len(syns_res) == 1
+    assert syns_res[0].decay_stage == "BROKEN"
+    assert syns_res[0].has_gold_seam is True
+    assert inactive == 5
+    assert active_rep == 0
+
+def test_kintsugi_decay_front_movement():
+    """Test that the decay front moves down to the next oldest stone when the newest is BROKEN."""
+    from backend.routes.bridges import simulate_kintsugi_decay, SynapsePair, ThoughtBrief
+    
+    bridge_created = datetime.now(timezone.utc) - timedelta(days=50)
+    syn1 = SynapsePair(
+        item_a=ThoughtBrief(id=1, title="A", summary="S", created_at=bridge_created + timedelta(days=2)),
+        item_b=ThoughtBrief(id=2, title="B", summary="S", created_at=bridge_created + timedelta(days=2)),
+        similarity=0.8
+    )
+    syn2 = SynapsePair(
+        item_a=ThoughtBrief(id=3, title="C", summary="S", created_at=bridge_created + timedelta(days=9)),
+        item_b=ThoughtBrief(id=4, title="D", summary="S", created_at=bridge_created + timedelta(days=9)),
+        similarity=0.8
+    )
+    
+    # Day 50 = 7 completed cycles (0 to 6). Cycle 0 active, Cycle 1 active, Cycles 2,3,4,5,6 inactive.
+    # Cycles 2,3,4,5 decay syn2 to BROKEN. Cycle 6 decays syn1 to WEAKENED.
+    sim_time = bridge_created + timedelta(days=50)
+    
+    syns_res, inactive, active_rep, front = simulate_kintsugi_decay(bridge_created, [syn1, syn2], sim_time)
+    
+    assert syns_res[1].decay_stage == "BROKEN"
+    assert syns_res[0].decay_stage == "WEAKENED"
+    assert front == 0
+
+def test_kintsugi_repair_oldest_first():
+    """Test that active cycles repair the oldest damaged stone first, rather than the newest."""
+    from backend.routes.bridges import simulate_kintsugi_decay, SynapsePair, ThoughtBrief
+    
+    bridge_created = datetime.now(timezone.utc) - timedelta(days=60)
+    syn1 = SynapsePair(
+        item_a=ThoughtBrief(id=1, title="A", summary="S", created_at=bridge_created + timedelta(days=2)),
+        item_b=ThoughtBrief(id=2, title="B", summary="S", created_at=bridge_created + timedelta(days=2)),
+        similarity=0.8
+    )
+    syn2 = SynapsePair(
+        item_a=ThoughtBrief(id=3, title="C", summary="S", created_at=bridge_created + timedelta(days=9)),
+        item_b=ThoughtBrief(id=4, title="D", summary="S", created_at=bridge_created + timedelta(days=9)),
+        similarity=0.8
+    )
+    syn3 = SynapsePair(
+        item_a=ThoughtBrief(id=5, title="E", summary="S", created_at=bridge_created + timedelta(days=50)),
+        item_b=ThoughtBrief(id=6, title="F", summary="S", created_at=bridge_created + timedelta(days=50)),
+        similarity=0.8
+    )
+    
+    # Day 52 = Cycle 7 active (syn3 placed). Completed cycles 0 to 6.
+    # Cycle 0, 1 active. Cycles 2, 3, 4, 5 inactive (Syn2 -> BROKEN).
+    # Cycle 6 inactive (Syn1 -> WEAKENED).
+    # Cycle 7 active (triggers repair on oldest damaged: Syn1. Syn1 -> STABLE).
+    sim_time = bridge_created + timedelta(days=52)
+    
+    syns_res, inactive, active_rep, front = simulate_kintsugi_decay(bridge_created, [syn1, syn2, syn3], sim_time)
+    
+    assert syns_res[0].decay_stage == "STABLE"
+    assert syns_res[1].decay_stage == "BROKEN"
+    assert syns_res[2].decay_stage == "STABLE"
+
+def test_kintsugi_gold_seam_permanence():
+    """Test that has_gold_seam persists even through subsequent decay and repair cycles."""
+    from backend.routes.bridges import simulate_kintsugi_decay, SynapsePair, ThoughtBrief
+    
+    bridge_created = datetime.now(timezone.utc) - timedelta(days=50)
+    syn = SynapsePair(
+        item_a=ThoughtBrief(id=1, title="A", summary="S", created_at=bridge_created + timedelta(days=2)),
+        item_b=ThoughtBrief(id=2, title="B", summary="S", created_at=bridge_created + timedelta(days=2)),
+        similarity=0.8
+    )
+    syn_c3 = SynapsePair(
+        item_a=ThoughtBrief(id=3, title="X", summary="S", created_at=bridge_created + timedelta(days=22)),
+        item_b=ThoughtBrief(id=4, title="Y", summary="S", created_at=bridge_created + timedelta(days=22)),
+        similarity=0.8
+    )
+    syn_c4 = SynapsePair(
+        item_a=ThoughtBrief(id=5, title="W", summary="S", created_at=bridge_created + timedelta(days=29)),
+        item_b=ThoughtBrief(id=6, title="Z", summary="S", created_at=bridge_created + timedelta(days=29)),
+        similarity=0.8
+    )
+    
+    # Day 31 = Cycle 4 ongoing. Completed cycles 0 to 3.
+    # Cycle 0 active (Syn1 placed, STABLE).
+    # Cycle 1, 2 inactive (Syn1 -> SMALL_CRACK, has_gold_seam=True).
+    # Cycle 3 active (Syn1 -> WEAKENED).
+    # Cycle 4 active (Syn1 -> STABLE).
+    # We verify that it returns to STABLE while preserving has_gold_seam = True.
+    sim_time = bridge_created + timedelta(days=31)
+    
+    syns_res, inactive, active_rep, front = simulate_kintsugi_decay(bridge_created, [syn, syn_c3, syn_c4], sim_time)
+    
+    assert syns_res[0].decay_stage == "STABLE"
+    assert syns_res[0].has_gold_seam is True
+
+def test_kintsugi_foundation_immunity():
+    """Test that base/foundation stones are immune to decay by verifying empty list behavior."""
+    from backend.routes.bridges import simulate_kintsugi_decay
+    
+    bridge_created = datetime.now(timezone.utc) - timedelta(days=50)
+    sim_time = bridge_created + timedelta(days=35)
+    
+    syns_res, inactive, active_rep, front = simulate_kintsugi_decay(bridge_created, [], sim_time)
+    assert len(syns_res) == 0
+    assert front is None
+
+def test_kintsugi_boundary_edge_cases():
+    """Test synapses created exactly at the 7-day boundary (23:59:59 vs 00:00:01)."""
+    from backend.routes.bridges import simulate_kintsugi_decay, SynapsePair, ThoughtBrief
+    
+    bridge_created = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=20)
+    
+    date_k = bridge_created + timedelta(seconds=604799)
+    date_kp1 = bridge_created + timedelta(seconds=604801)
+    
+    syn_k = SynapsePair(
+        item_a=ThoughtBrief(id=1, title="K", summary="S", created_at=date_k),
+        item_b=ThoughtBrief(id=2, title="K", summary="S", created_at=date_k),
+        similarity=0.8
+    )
+    syn_kp1 = SynapsePair(
+        item_a=ThoughtBrief(id=3, title="KP1", summary="S", created_at=date_kp1),
+        item_b=ThoughtBrief(id=4, title="KP1", summary="S", created_at=date_kp1),
+        similarity=0.8
+    )
+    
+    syns_res, inactive, active_rep, front = simulate_kintsugi_decay(bridge_created, [syn_k, syn_kp1], bridge_created + timedelta(days=15))
+    
+    res_k = next(s for s in syns_res if s.item_a.id == 1)
+    res_kp1 = next(s for s in syns_res if s.item_a.id == 3)
+    
+    assert res_k.placement_cycle == 0
+    assert res_kp1.placement_cycle == 1

@@ -131,8 +131,8 @@ def test_answer_quiz_success(client):
     assert data["interval_days"] == 3
     assert data["next_review"] == (date.today() + timedelta(days=3)).isoformat()
     
-    # Verify DB queries: 1. get user, 2. select quiz, 3. update quiz, 4. log answer
-    assert len(current_cursor.executed) == 4
+    # Verify DB queries: 1. get user, 2. select quiz, 3. update quiz, 4. log answer, plus 4 pulse score queries
+    assert len(current_cursor.executed) == 8
     update_query, update_params = current_cursor.executed[2]
     assert "UPDATE quizzes" in update_query
     assert pytest.approx(update_params[0]) == 2.6

@@ -66,6 +66,7 @@ async def open_pool() -> None:
         async with _pool.connection() as conn:
             await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS context_prompt TEXT;")
             await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS passive_context JSONB;")
+            await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS category VARCHAR(100);")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_day INT DEFAULT 0;")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_last_sent TIMESTAMP DEFAULT NULL;")
             await conn.execute("""
@@ -126,6 +127,21 @@ async def open_pool() -> None:
                     inviter_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     code       VARCHAR(50) UNIQUE NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            await conn.execute("ALTER TABLE cognitive_bridges ADD COLUMN IF NOT EXISTS last_ceremony_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+            await conn.execute("ALTER TABLE cognitive_bridges ADD COLUMN IF NOT EXISTS last_ceremony_at_1 TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+            await conn.execute("ALTER TABLE cognitive_bridges ADD COLUMN IF NOT EXISTS last_ceremony_at_2 TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS pulse_score NUMERIC DEFAULT 0;")
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS tag_portraits (
+                    id           SERIAL PRIMARY KEY,
+                    user_id      INT REFERENCES users(id) ON DELETE CASCADE,
+                    tag          VARCHAR(100) NOT NULL,
+                    description  TEXT NOT NULL,
+                    icon         VARCHAR(100) NOT NULL,
+                    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, tag)
                 );
             """)
             await conn.commit()

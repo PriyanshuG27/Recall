@@ -32,6 +32,26 @@
           <p id="tab-url" class="tab-url">Loading...</p>
         </div>
         
+        <!-- Quote Card (Highlight Clip) -->
+        <div id="quote-card-container" class="quote-card-container hidden">
+          <div class="quote-header">
+            <span class="label">Captured Quote</span>
+            <button id="btn-clear-quote" class="clear-quote-btn" title="Clear Quote">×</button>
+          </div>
+          <p id="quote-text" class="quote-body"></p>
+        </div>
+
+        <!-- Custom Context Note Area -->
+        <div class="context-container">
+          <textarea id="context-note" placeholder="Write a context note..." rows="3"></textarea>
+        </div>
+
+        <!-- Suggested Tags Area -->
+        <div id="tags-container" class="tags-container hidden">
+          <span class="label">Suggested Tags</span>
+          <div id="suggested-tags-list" class="suggested-tags-list"></div>
+        </div>
+        
         <button id="btn-save" class="btn btn-save">
           Save to Recall
         </button>

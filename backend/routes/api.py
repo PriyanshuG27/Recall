@@ -9,7 +9,7 @@ All endpoints require bearerAuth or telegramInitData (applied via OpenAPI custom
 from datetime import date, datetime, timezone, timedelta
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Path, Query, Response, status, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Path, Query, Response, status, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel, Field
 import psycopg
 
@@ -79,41 +79,43 @@ async def get_items(
         )
 
     # Base WHERE clauses scoped strictly to the authenticated user
-    where_clauses = ["user_id = %s"]
+    where_clauses = ["i.user_id = %s"]
     params = [user.id]
 
     if source_type is not None:
-        where_clauses.append("source_type = %s")
+        where_clauses.append("i.source_type = %s")
         params.append(source_type)
 
     if tag is not None:
-        where_clauses.append("%s = ANY(tags)")
+        where_clauses.append("%s = ANY(i.tags)")
         params.append(tag)
 
     if from_date is not None:
-        where_clauses.append("created_at >= %s")
+        where_clauses.append("i.created_at >= %s")
         params.append(from_date)
 
     if to_date is not None:
-        where_clauses.append("created_at <= %s")
+        where_clauses.append("i.created_at <= %s")
         params.append(to_date)
 
     where_str = " WHERE " + " AND ".join(where_clauses)
 
     async with db.cursor() as cur:
         # Get total count matching the filters
-        count_query = f"SELECT COUNT(*) FROM items{where_str};"
+        count_query = f"SELECT COUNT(*) FROM items i {where_str};"
         await cur.execute(count_query, tuple(params))
         row = await cur.fetchone()
         total = int(row[0]) if row else 0
 
-        # Retrieve items
+        # Retrieve items with associated SM2 quiz parameters
         offset = (page - 1) * limit
         items_query = f"""
-            SELECT id, title, summary, source_type, source_url, tags, created_at, context_note
-            FROM items
+            SELECT i.id, i.title, i.summary, i.source_type, i.source_url, i.tags, i.created_at, i.context_note,
+                   q.ease_factor, q.interval_days, q.next_review
+            FROM items i
+            LEFT JOIN quizzes q ON q.item_id = i.id AND q.user_id = i.user_id
             {where_str}
-            ORDER BY created_at DESC
+            ORDER BY i.created_at DESC
             LIMIT %s OFFSET %s;
         """
         items_params = params + [limit, offset]
@@ -123,6 +125,9 @@ async def get_items(
         items = []
         for r in rows:
             context_note = r[7] if len(r) > 7 else None
+            ease_factor = r[8] if len(r) > 8 else None
+            interval_days = r[9] if len(r) > 9 else None
+            next_review = r[10] if len(r) > 10 else None
             items.append(
                 PaginatedItem(
                     id=r[0],
@@ -133,6 +138,9 @@ async def get_items(
                     tags=r[5] if r[5] is not None else [],
                     created_at=r[6],
                     context_note=context_note,
+                    ease_factor=ease_factor,
+                    interval_days=interval_days,
+                    next_review=next_review,
                 )
             )
 
@@ -246,6 +254,8 @@ async def create_item(
         if settings.ENV != "test":
             from backend.services.user_service import get_and_update_user_streak
             await get_and_update_user_streak(cur, user.id)
+            from backend.services.pulse_service import update_user_pulse
+            await update_user_pulse(cur, user.id)
         await db.commit()
 
     # Invalidate graph cache
@@ -272,6 +282,137 @@ class ExtensionSaveRequest(BaseModel):
     url: Optional[str] = None
     text: Optional[str] = None
     title: Optional[str] = None
+    context_note: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+@router.get(
+    "/extension/download",
+    tags=["extension"],
+    summary="Download extension files pre-packaged as a ZIP file",
+)
+async def extension_download():
+    import os
+    import shutil
+    import tempfile
+    import asyncio
+    from fastapi.responses import FileResponse
+    from fastapi import HTTPException
+
+    ext_path = os.path.abspath("frontend/extension")
+    if not os.path.exists(ext_path):
+        raise HTTPException(status_code=404, detail="Extension source files not found.")
+
+    temp_dir = tempfile.gettempdir()
+    zip_base = os.path.join(temp_dir, "recall_extension")
+
+    # Run blocking file zipping in a threadpool to keep FastAPI non-blocking
+    archive_path = await asyncio.to_thread(shutil.make_archive, zip_base, 'zip', ext_path)
+
+    return FileResponse(
+        archive_path,
+        media_type="application/zip",
+        filename="recall_extension.zip"
+    )
+
+
+@router.get(
+    "/extension/check",
+    response_model=dict,
+    tags=["extension"],
+    summary="Check if a URL is already saved",
+    responses={401: {"model": ErrorResponse}},
+)
+async def extension_check(
+    url: str = Query(..., description="The URL to check."),
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+):
+    async with db.cursor() as cur:
+        await cur.execute(
+            "SELECT id FROM items WHERE user_id = %s AND source_url = %s LIMIT 1;",
+            (user.id, url)
+        )
+        row = await cur.fetchone()
+        return {"exists": row is not None}
+
+
+@router.get(
+    "/extension/suggest_tags",
+    response_model=List[str],
+    tags=["extension"],
+    summary="Get suggested tags for extension content",
+    responses={401: {"model": ErrorResponse}},
+)
+async def extension_suggest_tags(
+    url: Optional[str] = Query(None, description="The URL of the page."),
+    title: Optional[str] = Query(None, description="The title of the page."),
+    text: Optional[str] = Query(None, description="The page content/selection text."),
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+):
+    from backend.services.ai_cascade import AICascade
+    cascade = AICascade()
+    content = text or title or ""
+    
+    suggested = []
+    
+    # 1. Try AI-based tag generation first
+    if content.strip():
+        try:
+            res = await cascade.summarise(content)
+            if isinstance(res, dict) and "tags" in res:
+                suggested.extend(res["tags"])
+        except Exception as e:
+            logger.error("Failed to suggest tags via AI for extension: %s", e)
+
+    # 2. Extract existing user tags to match against the title/text,
+    # or fallback to user's top tags if AI failed/returned empty.
+    try:
+        async with db.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT DISTINCT unnest(tags) AS tag, COUNT(*) AS count
+                FROM items
+                WHERE user_id = %s
+                GROUP BY tag
+                ORDER BY count DESC
+                LIMIT 50;
+                """,
+                (user.id,)
+            )
+            rows = await cur.fetchall()
+            user_tags = [row[0] for row in rows]
+            
+            # Match keywords from title/text/url with user's top tags
+            normalized_content = content.lower()
+            url_lower = url.lower() if url else ""
+            
+            matched_tags = []
+            for t in user_tags:
+                t_lower = t.lower()
+                if t_lower in normalized_content or t_lower in url_lower:
+                    matched_tags.append(t)
+            
+            # Add matches to suggested
+            for mt in matched_tags:
+                if mt not in suggested:
+                    suggested.append(mt)
+            
+            # If still empty, supply the user's top 3 tags as general fallback options
+            if not suggested and user_tags:
+                suggested.extend(user_tags[:3])
+    except Exception as db_err:
+        logger.error("Failed to fetch fallback tags from DB: %s", db_err)
+
+    # Clean and deduplicate tags
+    unique_tags = []
+    for tag in suggested:
+        cleaned = tag.strip().lower()
+        if cleaned and cleaned not in unique_tags:
+            unique_tags.append(cleaned)
+            
+    return unique_tags[:6]
 
 
 @router.post(
@@ -332,10 +473,11 @@ async def extension_save(
     try:
         ai_res = await cascade.summarise(raw_text)
         summary = ai_res.get("summary") or "No summary generated."
-        tags = ai_res.get("tags") or []
+        tags = req.tags if req.tags is not None else (ai_res.get("tags") or [])
     except Exception as e:
         logger.error("Failed to generate AI summary/tags for extension item: %s", e)
         summary = "No summary generated."
+        tags = req.tags or []
 
     normalized_tags = [t.strip().lower() for t in tags if isinstance(t, str) and t.strip()][:5]
     embedding = await embed_text(raw_text)
@@ -344,8 +486,8 @@ async def extension_save(
     async with db.cursor() as cur:
         await cur.execute(
             """
-            INSERT INTO items (user_id, source_type, source_url, raw_text, summary, title, embedding, tags)
-            VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s)
+            INSERT INTO items (user_id, source_type, source_url, raw_text, summary, title, embedding, tags, context_note)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s, %s)
             RETURNING id, created_at;
             """,
             (
@@ -357,6 +499,7 @@ async def extension_save(
                 title,
                 embedding,
                 normalized_tags,
+                req.context_note
             )
         )
         row = await cur.fetchone()
@@ -369,6 +512,8 @@ async def extension_save(
         if settings.ENV != "test":
             from backend.services.user_service import get_and_update_user_streak
             await get_and_update_user_streak(cur, user.id)
+            from backend.services.pulse_service import update_user_pulse
+            await update_user_pulse(cur, user.id)
         await db.commit()
 
     # Invalidate graph cache
@@ -419,6 +564,29 @@ async def get_tags(
         rows = await cur.fetchall()
 
     return [TagCountResponse(tag=row[0], count=row[1]) for row in rows]
+
+
+@router.get(
+    "/tags/portraits",
+    response_model=dict,
+    tags=["tags"],
+    summary="Get user tag portraits",
+    description="Returns a dictionary mapping tags to their AI-generated descriptions and icons.",
+    responses={401: {"model": ErrorResponse}},
+)
+async def get_tag_portraits(
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+):
+    """Retrieve the mapping of tag portraits (description, icon) for the authenticated user."""
+    async with db.cursor() as cur:
+        await cur.execute(
+            "SELECT tag, description, icon FROM tag_portraits WHERE user_id = %s;",
+            (user.id,)
+        )
+        rows = await cur.fetchall()
+        
+    return {row[0]: {"description": row[1], "icon": row[2]} for row in rows}
 
 @router.delete(
     "/items/{item_id}",
@@ -517,7 +685,15 @@ async def search_items(
 ):
     """Search items and run Map-Reduce RAG if applicable."""
     from backend.services.search_service import hybrid_search
-    from backend.services.ai_cascade import AICascade
+    from backend.services.ai_cascade import AICascade, check_prompt_injection
+
+    injection_warning = check_prompt_injection(req.query)
+    if injection_warning:
+        return RAGSearchResponse(
+            answer=injection_warning,
+            sources=[],
+            query=req.query
+        )
 
     results = await hybrid_search(req.query, user.id, db)
     
@@ -544,7 +720,7 @@ async def search_items(
 
     # Conditional RAG answer generation
     answer = None
-    if req.rag and len(results_limited) >= 3:
+    if req.rag and len(results_limited) >= 1:
         cascade = AICascade()
         try:
             answer = await cascade.answer_question(req.query, summaries)
@@ -952,6 +1128,8 @@ async def answer_quiz(
             """,
             (user.id, id, req.quality)
         )
+        from backend.services.pulse_service import update_user_pulse
+        await update_user_pulse(cur, user.id)
         await db.commit()
         
         import json
@@ -1932,6 +2110,7 @@ class UserProfileResponse(BaseModel):
     mind_type: Optional[str]
     mind_type_summary: Optional[str]
     mind_type_trajectory: List[dict]
+    pulse_score: Optional[int] = 0
 
 class DetailedDimension(BaseModel):
     score: float
@@ -2004,14 +2183,14 @@ async def get_user_profile(
 ):
     async with db.cursor() as cur:
         await cur.execute(
-            "SELECT self_description, mind_type, mind_type_summary, mind_type_trajectory FROM users WHERE id = %s;",
+            "SELECT self_description, mind_type, mind_type_summary, mind_type_trajectory, pulse_score FROM users WHERE id = %s;",
             (user.id,)
         )
         row = await cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="User not found")
         
-        self_desc, mind_type, summary, traj = row
+        self_desc, mind_type, summary, traj, pulse_score = row
         
         # Check node count to see if we should unlock and lazy-calculate
         await cur.execute("SELECT COUNT(*) FROM items WHERE user_id = %s;", (user.id,))
@@ -2073,7 +2252,8 @@ async def get_user_profile(
             "self_description": self_desc,
             "mind_type": mind_type,
             "mind_type_summary": summary,
-            "mind_type_trajectory": traj_list
+            "mind_type_trajectory": traj_list,
+            "pulse_score": int(pulse_score) if pulse_score is not None else 0
         }
 
 @router.post(
@@ -2266,6 +2446,234 @@ async def get_detailed_profile(
             "velocity": {"score": float(velocity), "threshold": 10.0, "explanation": v_exp},
             "novelty": {"score": float(novelty), "threshold": 0.35, "explanation": n_exp}
         }
+
+
+@router.get(
+    "/export/zip",
+    tags=["profile"],
+    summary="Export all notes to a zipped Obsidian Vault (OKF format)",
+    description="Generates and downloads a ZIP containing all notes formatted as OKF Markdown files.",
+    responses={
+        401: {"model": ErrorResponse},
+    },
+)
+async def export_zip(
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db)
+):
+    import io
+    import zipfile
+    from datetime import datetime, timezone
+    from fastapi.responses import StreamingResponse
+    from backend.services.okf_service import serialize_item_to_okf
+    from backend.services.encryption import decrypt
+
+    # 1. Fetch user profile
+    async with db.cursor() as cur:
+        await cur.execute(
+            "SELECT telegram_chat_id FROM users WHERE id = %s;",
+            (user.id,)
+        )
+        user_row = await cur.fetchone()
+        if not user_row:
+            raise HTTPException(status_code=404, detail="User not found")
+
+    # 2. Query all items
+    items = []
+    async with db.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT id, source_type, source_url, raw_text, summary, title, tags, created_at, context_prompt
+            FROM items
+            WHERE user_id = %s
+            ORDER BY created_at DESC;
+            """,
+            (user.id,)
+        )
+        async for row in cur:
+            item_id, source_type, source_url, raw_text, summary, title, tags, created_at, context_prompt = row
+            
+            # Decrypt content body
+            decrypted_text = None
+            if raw_text:
+                try:
+                    decrypted_text = decrypt(raw_text)
+                except Exception:
+                    decrypted_text = None
+            
+            items.append({
+                "id": item_id,
+                "source_type": source_type,
+                "source_url": source_url,
+                "raw_text_decrypted": decrypted_text,
+                "summary": summary,
+                "title": title,
+                "tags": tags,
+                "created_at": created_at,
+                "context_prompt": context_prompt
+            })
+
+    # 3. Create ZIP archive in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for item in items:
+            # Generate safe filename
+            raw_title = item["title"] or "Untitled"
+            safe_title = "".join(c if c.isascii() and c.isalnum() else "_" for c in raw_title).strip("_")
+            # Truncate to 50 chars to avoid exceeding Windows MAX_PATH limit (260 chars)
+            safe_title = safe_title[:50].rstrip("_")
+            filename = f"{safe_title or 'note'}_{item['id']}.md"
+            
+            # Category fallback
+            category = item["source_type"] or "text"
+            
+            # Generate OKF content
+            okf_content = serialize_item_to_okf(
+                title=item["title"],
+                tags=item["tags"],
+                created_at=item["created_at"],
+                source_url=item["source_url"],
+                context_note=item["context_prompt"],
+                category=category,
+                content=item["raw_text_decrypted"] or item["summary"] or ""
+            )
+            zip_file.writestr(filename, okf_content)
+
+    zip_buffer.seek(0)
+    
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    headers = {
+        "Content-Disposition": f'attachment; filename="recall-obsidian-export-{timestamp}.zip"',
+        "Access-Control-Expose-Headers": "Content-Disposition"
+    }
+    
+    logger.info("Audit Log - Export ZIP completed: user_id=%s, item_count=%d", user.id, len(items))
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers=headers
+    )
+
+
+@router.post(
+    "/import/zip",
+    tags=["profile"],
+    summary="Import notes from a zipped Obsidian Vault (OKF format)",
+    description="Accepts an uploaded ZIP containing OKF Markdown files, parses, embeds, and stores them in database.",
+    responses={
+        401: {"model": ErrorResponse},
+        400: {"model": ErrorResponse, "description": "Invalid file format or failed parsing."},
+    }
+)
+async def import_zip(
+    file: UploadFile = File(...),
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db)
+):
+    import io
+    import zipfile
+    from backend.services.okf_service import parse_okf_to_item
+    from backend.services.encryption import encrypt
+    from backend.services.search_service import embed_text
+    from backend.services.pdf_ingester import chunk_text
+
+    if not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be a ZIP archive.")
+
+    try:
+        contents = await file.read()
+        zip_buffer = io.BytesIO(contents)
+    except Exception as e:
+        logger.error("Failed to read uploaded ZIP file: %s", e)
+        raise HTTPException(status_code=400, detail="Failed to read uploaded ZIP file.")
+
+    imported_count = 0
+    try:
+        with zipfile.ZipFile(zip_buffer, "r") as zip_file:
+            for filename in zip_file.namelist():
+                # Skip folders and non-markdown files
+                if filename.endswith("/") or not filename.endswith(".md"):
+                    continue
+
+                try:
+                    content_bytes = zip_file.read(filename)
+                    content_str = content_bytes.decode("utf-8", errors="ignore")
+                except Exception as e:
+                    logger.warning("Failed to read file %s from ZIP: %s", filename, e)
+                    continue
+
+                # Parse OKF Markdown
+                parsed_data = parse_okf_to_item(content_str)
+                title = parsed_data.get("title") or filename.split("/")[-1].replace(".md", "")
+                tags = parsed_data.get("tags") or []
+                raw_text = parsed_data.get("raw_text") or ""
+                source_url = parsed_data.get("source_url")
+                context_note = parsed_data.get("context_note")
+                category = parsed_data.get("category") or "text"
+
+                # Standardize tags (lowercase, sorted)
+                tags = sorted(list(set(str(t).strip().lower() for t in tags if t)))
+
+                # 1. Compute parent note summary fallback and embedding
+                summary = (raw_text[:200] + "...") if len(raw_text) > 200 else (raw_text or "Imported Obsidian note.")
+                try:
+                    parent_embedding = await embed_text(raw_text or title)
+                except Exception as e:
+                    logger.error("Failed to compute embedding for imported item %s: %s", title, e)
+                    # Use a dummy/fallback embedding of 384 dimensions if API is down
+                    parent_embedding = [0.0] * 384
+
+                encrypted_raw_text = encrypt(raw_text) if raw_text else None
+
+                # 2. Database Insert parent item
+                async with db.cursor() as cur:
+                    await cur.execute(
+                        """
+                        INSERT INTO items (user_id, source_type, source_url, raw_text, summary, title, embedding, tags, context_prompt)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s, %s)
+                        RETURNING id;
+                        """,
+                        (user.id, category, source_url, encrypted_raw_text, summary, title, parent_embedding, tags, context_note)
+                    )
+                    row = await cur.fetchone()
+                    if not row:
+                        continue
+                    item_id = row[0]
+
+                    # 3. Text chunking & item_chunks generation for RAG
+                    chunks = chunk_text(raw_text, chunk_size_words=300)
+                    if chunks:
+                        for chunk_idx, chunk in enumerate(chunks):
+                            chunk_excerpt = chunk[:500]  # Respect db length limits
+                            try:
+                                chunk_emb = await embed_text(chunk)
+                            except Exception:
+                                chunk_emb = parent_embedding  # fallback
+
+                            await cur.execute(
+                                """
+                                INSERT INTO item_chunks (item_id, user_id, chunk_index, chunk_text, embedding)
+                                VALUES (%s, %s, %s, %s, %s::vector);
+                                """,
+                                (item_id, user.id, chunk_idx, chunk_excerpt, chunk_emb)
+                            )
+                imported_count += 1
+        
+        await db.commit()
+    except Exception as e:
+        logger.error("Failed to process imported ZIP file contents: %s", e)
+        raise HTTPException(status_code=400, detail="Failed to process imported ZIP file contents.")
+
+    # Invalidate Graph cache
+    try:
+        from backend.services.redis_client import redis
+        await redis.delete(f"graph:{user.id}")
+        logger.info("Invalidated graph cache for user %d after zip import", user.id)
+    except Exception as e:
+        logger.warning("Failed to invalidate graph cache after import: %s", e)
+
+    logger.info("Audit Log - Import ZIP completed: user_id=%s, imported_count=%d", user.id, imported_count)
+    return {"status": "success", "imported_count": imported_count}
 
 
 @router.websocket("/ws")

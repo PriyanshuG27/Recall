@@ -49,6 +49,9 @@ class PaginatedItem(BaseModel):
     tags: List[str] = Field(default_factory=list, description="List of auto-generated tags.")
     created_at: AwareDateTime = Field(..., description="Item creation timestamp.")
     context_note: Optional[str] = Field(None, description="User-provided context note.")
+    ease_factor: Optional[float] = Field(None, description="SM-2 ease factor.")
+    interval_days: Optional[int] = Field(None, description="SM-2 interval days.")
+    next_review: Optional[datetime_date] = Field(None, description="Scheduled review date.")
 
 
 class PaginatedItemsResponse(BaseModel):

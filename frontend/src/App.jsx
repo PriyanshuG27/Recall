@@ -10,6 +10,7 @@ import SearchOverlay from './components/SearchOverlay';
 import { PerfProvider } from './context/PerfContext';
 import AudioEngine from './utils/AudioEngine';
 import SplashScreen from './components/SplashScreen';
+import ChatDrawer from './components/ChatDrawer';
 
 /* ── Lazy-load rooms ──────────────────────────────────────── */
 const Archive = lazy(() => import('./pages/Archive'));
@@ -18,6 +19,7 @@ const Drill   = lazy(() => import('./pages/Drill'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Profile  = lazy(() => import('./pages/Profile'));
 const Bridges  = lazy(() => import('./pages/Bridges'));
+const BranchingPOC = lazy(() => import('./pages/BranchingPOC'));
 
 /* ── Map pathname → room id ──────────────────────────────── */
 function pathToRoom(pathname) {
@@ -28,6 +30,7 @@ function pathToRoom(pathname) {
   if (pathname.startsWith('/settings')) return 'settings';
   if (pathname.startsWith('/profile')) return 'profile';
   if (pathname.startsWith('/bridges')) return 'bridges';
+  if (pathname.startsWith('/poc/branching')) return 'poc-branching';
   return 'archive';
 }
 
@@ -74,6 +77,19 @@ class RoomErrorBoundary extends React.Component {
 function App() {
   const { user, loading, logout } = useAuth();
   const { addToast, removeToast }  = useToast();
+  const [assistantOpen, setAssistantOpen] = useState(false);
+
+  /* ── Keyboard shortcut Ctrl+Shift+A for Assistant ──────── */
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setAssistantOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   /* ── Axios callbacks ───────────────────────────────────── */
   useEffect(() => {
@@ -143,6 +159,7 @@ function App() {
   /* ── Stats & due count ─────────────────────────────────── */
   const [dueCount, setDueCount] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [totalSaves, setTotalSaves] = useState(0);
 
   const fetchStatsAndProfile = useCallback(async () => {
     if (!user) return;
@@ -160,6 +177,7 @@ function App() {
       if (meRes.ok) {
         const meData = await meRes.json();
         setStreak(meData.streak_count || 0);
+        setTotalSaves(meData.total_saves || 0);
       }
     } catch (err) {
       console.error('Failed to fetch profile settings in App:', err);
@@ -259,10 +277,22 @@ function App() {
     );
   }
 
+  /* ── Isolated POC Route ────────────────────────────────── */
+  if (currentRoom === 'poc-branching') {
+    return (
+      <PerfProvider>
+        <Suspense fallback={<RoomLoader />}>
+          <BranchingPOC />
+        </Suspense>
+      </PerfProvider>
+    );
+  }
+
   /* ── Observatory Shell ────────────────────────────────── */
   return (
     <PerfProvider>
-      <CustomCursor />
+      <div className={`observatory-shell ${assistantOpen ? 'assistant-active' : ''}`}>
+        <CustomCursor />
       <Sidebar
         currentRoom={currentRoom}
         onNavigate={handleNavigate}
@@ -368,6 +398,17 @@ function App() {
       </main>
 
 
+      <ChatDrawer 
+        isOpen={assistantOpen} 
+        onOpen={() => setAssistantOpen(true)} 
+        onClose={() => setAssistantOpen(false)} 
+        totalSaves={totalSaves}
+        onItemSelect={(item) => {
+          setSelectedItemForArchive(item);
+          handleNavigate('archive');
+        }}
+      />
+
       {/* Cmd+K search */}
       {searchOpen && (
         <SearchOverlay
@@ -384,6 +425,7 @@ function App() {
           }}
         />
       )}
+      </div>
     </PerfProvider>
   );
 }

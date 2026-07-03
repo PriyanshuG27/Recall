@@ -187,7 +187,7 @@ def test_get_items_filtered_by_tag(client, override_db):
 
     # Verify query includes tag condition
     count_query, count_params = current_cursor.executed[1]
-    assert "%s = ANY(tags)" in count_query
+    assert "%s = ANY(i.tags)" in count_query
     assert count_params == (42, "python")
 
 # --- TELEGRAM WEBHOOK /TAGS BOT COMMAND TEST ---

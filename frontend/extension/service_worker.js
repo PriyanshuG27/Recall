@@ -34,7 +34,7 @@ function isTokenExpired(token) {
 }
 
 // Unified Save Execution Flow
-async function executeSave(info, tab) {
+async function executeSave(info, tab, contextNote = null, quote = null, tags = null) {
   const extensionId = chrome.runtime.id;
   const storageData = await chrome.storage.local.get(["jwt", "api_url", "notifications_enabled"]);
   
@@ -54,7 +54,11 @@ async function executeSave(info, tab) {
   let text = "";
   let title = "";
 
-  if (info.selectionText) {
+  if (quote) {
+    text = quote;
+    title = tab ? tab.title : "Saved Webpage Clip";
+    url = info.pageUrl || (tab ? tab.url : "");
+  } else if (info.selectionText) {
     text = info.selectionText;
     title = tab ? `Selection from ${tab.title || "Webpage"}` : "Selected Text";
     url = tab ? tab.url : "";
@@ -75,7 +79,16 @@ async function executeSave(info, tab) {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`
       },
-      body: JSON.stringify({ url, text, title })
+      body: (() => {
+        const payload = { url, text, title };
+        if (contextNote !== null && contextNote !== undefined) {
+          payload.context_note = contextNote;
+        }
+        if (tags !== null && tags !== undefined) {
+          payload.tags = tags;
+        }
+        return JSON.stringify(payload);
+      })()
     });
 
     if (response.ok) {
@@ -124,15 +137,66 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+async function executeCheck(url) {
+  const extensionId = chrome.runtime.id;
+  const storageData = await chrome.storage.local.get(["jwt", "api_url"]);
+  
+  if (!storageData.jwt) {
+    return { exists: false };
+  }
+
+  const token = decryptToken(storageData.jwt, extensionId);
+  if (!token || isTokenExpired(token)) {
+    return { exists: false };
+  }
+
+  const currentApiUrl = storageData.api_url || VITE_API_URL;
+
+  try {
+    const response = await fetch(`${currentApiUrl}/api/extension/check?url=${encodeURIComponent(url)}`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return { success: true, exists: data.exists };
+    }
+  } catch (err) {
+    console.error("Check URL failed:", err);
+  }
+  return { exists: false };
+}
+
 // 4. Runtime Message Listener (Popup shared logic)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "SAVE_CURRENT_TAB") {
     chrome.tabs.query({ active: true, currentWindow: true }).then(async (tabs) => {
       if (tabs && tabs.length > 0) {
-        const result = await executeSave({ pageUrl: tabs[0].url }, tabs[0]);
+        const result = await executeSave(
+          { pageUrl: tabs[0].url },
+          tabs[0],
+          message.context_note,
+          message.quote,
+          message.tags
+        );
         sendResponse(result);
       } else {
         sendResponse({ success: false, error: "No active tab" });
+      }
+    });
+    return true;
+  }
+
+  if (message.type === "CHECK_CURRENT_TAB") {
+    chrome.tabs.query({ active: true, currentWindow: true }).then(async (tabs) => {
+      if (tabs && tabs.length > 0) {
+        const result = await executeCheck(tabs[0].url);
+        sendResponse(result);
+      } else {
+        sendResponse({ exists: false });
       }
     });
     return true;

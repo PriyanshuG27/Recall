@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     MODAL_API_TOKEN: str | None = None
     GROQ_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
+    OPENROUTER_API_KEY: str | None = None
+    NVIDIA_API_KEY: str | None = None
     COMPUTE_PROVIDER: str | None = None
     INTERNAL_API_KEY: str | None = "dev_internal_api_key"
     

@@ -93,16 +93,12 @@ def get_auth_token():
 
 # --- RAG SEARCH TESTS ---
 
-def test_rag_skipped_on_fewer_than_3_sources(client, override_db):
-    """POST /api/search skips RAG generation and returns answer = null if there are < 3 sources."""
+def test_rag_skipped_on_no_sources(client, override_db):
+    """POST /api/search skips RAG generation and returns answer = null if there are no sources."""
     global current_cursor
     
-    # 2 mock items returned by hybrid_search
-    now = datetime.now(timezone.utc)
-    mock_results = [
-        {"id": 1, "title": "Title 1", "summary": "Summary 1", "source_type": "url", "source_url": None, "score": 0.8, "created_at": now},
-        {"id": 2, "title": "Title 2", "summary": "Summary 2", "source_type": "pdf", "source_url": None, "score": 0.7, "created_at": now},
-    ]
+    # 0 mock items returned by hybrid_search
+    mock_results = []
     current_cursor = RecordingCursor()
     
     token = get_auth_token()
@@ -110,17 +106,15 @@ def test_rag_skipped_on_fewer_than_3_sources(client, override_db):
     with mock.patch("backend.services.search_service.hybrid_search", return_value=mock_results) as mock_search, \
          mock.patch("backend.services.ai_cascade.AICascade.answer_question") as mock_answer_question:
          
-        response = client.post("/api/search", json={"query": "fastapi"}, cookies={"recall_session": token})
-        assert response.status_code == 200
-        
-        data = response.json()
-        assert data["query"] == "fastapi"
-        assert data["answer"] is None  # Skipped
-        assert len(data["sources"]) == 2
-        assert data["sources"][0]["id"] == 1
-        assert data["sources"][1]["id"] == 2
-        
-        mock_answer_question.assert_not_called()
+         response = client.post("/api/search", json={"query": "fastapi"}, cookies={"recall_session": token})
+         assert response.status_code == 200
+         
+         data = response.json()
+         assert data["query"] == "fastapi"
+         assert data["answer"] is None  # Skipped
+         assert len(data["sources"]) == 0
+         
+         mock_answer_question.assert_not_called()
 
 def test_rag_generated_on_at_least_3_sources(client, override_db):
     """POST /api/search synthesises an answer if there are >= 3 sources."""

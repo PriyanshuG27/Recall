@@ -441,7 +441,19 @@ export default function MapCanvas({
 
               // Opacity decay
               const baseAlpha = 0.95;
-              const alpha = baseAlpha * ratio;
+              let alpha = baseAlpha * ratio;
+
+              // Context-aware dimming: fade drift edges that do not connect to the focused/selected subgraph
+              if (query) {
+                const bothMatch = matches.has(nodeA.id) && matches.has(nodeB.id);
+                if (!bothMatch) alpha *= 0.01;
+              } else if (anySel) {
+                const isLit = litNodes.has(nodeA.id) || litNodes.has(nodeB.id);
+                if (!isLit) alpha *= 0.03;
+              } else if (hov != null) {
+                const isNearHov = nodeA.id === hov || nodeB.id === hov;
+                if (!isNearHov) alpha *= 0.04;
+              }
 
               // Interpolate color desaturation: glowing gold/orange (230, 160, 60) -> desaturated gray (138, 133, 130)
               const r = Math.round(230 * ratio + 138 * (1 - ratio));
@@ -583,6 +595,57 @@ export default function MapCanvas({
 
         } else {
           const drawR = (isSel || isHov || isLit) ? r * 1.7 : r;
+
+          // Spaced Repetition (SM2) Node Glows
+          // Active review warning: Amber/Orange glow for cooling nodes (interval_days <= 2 or unquizzed days_since_saved > 2)
+          // Solid retention: Indigo/Blue glow for stable nodes (interval_days >= 7)
+          let interval = node.interval_days;
+          
+          if (interval === undefined || interval === null) {
+            const created = node.created_at ? new Date(node.created_at) : null;
+            if (created) {
+              const daysSince = (now - created.getTime()) / 86400000;
+              if (daysSince > 2.0) {
+                // Decayed without review -> trigger warning glow
+                interval = 1;
+              } else {
+                // Freshly saved -> stable indigo glow
+                interval = 7;
+              }
+            }
+          }
+
+          if (interval !== undefined && interval !== null) {
+            let sm2Col = null;
+            let sm2Alpha = 0.22;
+            if (interval <= 2) {
+              sm2Col = '#e67e22';
+              sm2Alpha = 0.22 + 0.08 * Math.sin(now * 3.0 + Math.abs(node.id));
+            } else if (interval >= 7) {
+              sm2Col = '#3498db';
+              sm2Alpha = 0.16;
+            }
+
+            if (sm2Col) {
+              const sm2Glow = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, drawR * 3.0);
+              sm2Glow.addColorStop(0, ha(sm2Col, sm2Alpha));
+              sm2Glow.addColorStop(1, ha(sm2Col, 0));
+              ctx.beginPath();
+              ctx.arc(node.x, node.y, drawR * 3.0, 0, Math.PI * 2);
+              ctx.fillStyle = sm2Glow;
+              ctx.fill();
+
+              if (interval <= 2) {
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, drawR + 4.0/k, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(230,126,34,${0.35 + 0.15 * Math.sin(now * 2.5 + Math.abs(node.id))})`;
+                ctx.lineWidth = 1.0 / k;
+                ctx.setLineDash([1, 2]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+              }
+            }
+          }
 
           if (isSel || isHov || isLit || (query && inSearch)) {
             const glow = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, drawR * 3.5);

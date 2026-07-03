@@ -3,7 +3,7 @@ import logging
 import asyncio
 import httpx
 import json
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 from datetime import date, datetime, timezone, time as dt_time, timedelta
 
 from fastapi import APIRouter, Depends, Request, BackgroundTasks
@@ -15,6 +15,7 @@ from backend.db.connection import get_db
 from backend.services.user_service import upsert_user
 from backend.services.rate_limiter import check_rate_limit, RateLimitExceeded
 from backend.services.redis_client import redis
+from backend.services.ai_cascade import mask_pii
 import psycopg
 
 logger = logging.getLogger(__name__)
@@ -318,16 +319,35 @@ async def telegram_webhook(
                     )
                     row = await cur.fetchone()
                     
-                url_edit = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageText"
+                is_photo = "photo" in callback_query.get("message", {})
+                
                 if not row:
-                    payload_edit = {
-                        "chat_id": chat_id,
-                        "message_id": callback_query["message"]["message_id"],
-                        "text": "🎉 No quizzes due! Come back tomorrow.",
-                        "parse_mode": "HTML",
-                        "reply_markup": {"inline_keyboard": []}
-                    }
-                    background_tasks.add_task(http_client.post, url_edit, json=payload_edit)
+                    if is_photo:
+                        url_send = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+                        payload_send = {
+                            "chat_id": chat_id,
+                            "text": "🎉 No quizzes due! Come back tomorrow.",
+                            "parse_mode": "HTML"
+                        }
+                        background_tasks.add_task(http_client.post, url_send, json=payload_send)
+                        
+                        url_markup = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup"
+                        payload_markup = {
+                            "chat_id": chat_id,
+                            "message_id": callback_query["message"]["message_id"],
+                            "reply_markup": {"inline_keyboard": []}
+                        }
+                        background_tasks.add_task(http_client.post, url_markup, json=payload_markup)
+                    else:
+                        url_edit = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageText"
+                        payload_edit = {
+                            "chat_id": chat_id,
+                            "message_id": callback_query["message"]["message_id"],
+                            "text": "🎉 No quizzes due! Come back tomorrow.",
+                            "parse_mode": "HTML",
+                            "reply_markup": {"inline_keyboard": []}
+                        }
+                        background_tasks.add_task(http_client.post, url_edit, json=payload_edit)
                     logger.info("Processed quiz:next: no quizzes left for chat_id %s", chat_id)
                 else:
                     quiz_id, question, options_val, correct_index, explanation = row
@@ -337,26 +357,43 @@ async def telegram_webhook(
                         opts = options_val
                         
                     inline_keyboard = [
-                        [
-                            {"text": f"A. {opts[0]}", "callback_data": f"quiz:{quiz_id}:0"},
-                            {"text": f"B. {opts[1]}", "callback_data": f"quiz:{quiz_id}:1"}
-                        ],
-                        [
-                            {"text": f"C. {opts[2]}", "callback_data": f"quiz:{quiz_id}:2"},
-                            {"text": f"D. {opts[3]}", "callback_data": f"quiz:{quiz_id}:3"}
-                        ]
+                        [{"text": f"A. {opts[0]}", "callback_data": f"quiz:{quiz_id}:0"}],
+                        [{"text": f"B. {opts[1]}", "callback_data": f"quiz:{quiz_id}:1"}],
+                        [{"text": f"C. {opts[2]}", "callback_data": f"quiz:{quiz_id}:2"}],
+                        [{"text": f"D. {opts[3]}", "callback_data": f"quiz:{quiz_id}:3"}]
                     ]
                     
-                    payload_edit = {
-                        "chat_id": chat_id,
-                        "message_id": callback_query["message"]["message_id"],
-                        "text": f"<b>{question}</b>",
-                        "parse_mode": "HTML",
-                        "reply_markup": {
-                            "inline_keyboard": inline_keyboard
+                    if is_photo:
+                        url_send = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+                        payload_send = {
+                            "chat_id": chat_id,
+                            "text": f"<b>{question}</b>",
+                            "parse_mode": "HTML",
+                            "reply_markup": {
+                                "inline_keyboard": inline_keyboard
+                            }
                         }
-                    }
-                    background_tasks.add_task(http_client.post, url_edit, json=payload_edit)
+                        background_tasks.add_task(http_client.post, url_send, json=payload_send)
+                        
+                        url_markup = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup"
+                        payload_markup = {
+                            "chat_id": chat_id,
+                            "message_id": callback_query["message"]["message_id"],
+                            "reply_markup": {"inline_keyboard": []}
+                        }
+                        background_tasks.add_task(http_client.post, url_markup, json=payload_markup)
+                    else:
+                        url_edit = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageText"
+                        payload_edit = {
+                            "chat_id": chat_id,
+                            "message_id": callback_query["message"]["message_id"],
+                            "text": f"<b>{question}</b>",
+                            "parse_mode": "HTML",
+                            "reply_markup": {
+                                "inline_keyboard": inline_keyboard
+                            }
+                        }
+                        background_tasks.add_task(http_client.post, url_edit, json=payload_edit)
                     logger.info("Processed quiz:next: loaded next quiz %d for chat_id %s", quiz_id, chat_id)
                     
             if data.startswith("onboarding_skip:"):
@@ -609,13 +646,11 @@ async def telegram_webhook(
                         quiz_id = int(parts[1])
                         selected_idx = int(parts[2])
                     except ValueError:
-                        # Silently ignore parsing errors
                         url_ans = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
                         background_tasks.add_task(http_client.post, url_ans, json={"callback_query_id": callback_query_id})
                         return {"status": "ok", "detail": "callback_query_invalid_params"}
                         
                     async with db.cursor() as cur:
-                        # Ownership check + fetch quiz data in one go
                         await cur.execute(
                             """
                             SELECT user_id, ease_factor, interval_days, correct_index, explanation, question, options, next_review
@@ -627,7 +662,6 @@ async def telegram_webhook(
                         row = await cur.fetchone()
                         
                         if not row:
-                            # Silently ignore if quiz doesn't exist
                             url_ans = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
                             background_tasks.add_task(http_client.post, url_ans, json={"callback_query_id": callback_query_id})
                             logger.info("Stale callback/non-existent quiz ID %d: silently ignored", quiz_id)
@@ -635,89 +669,46 @@ async def telegram_webhook(
                             
                         owner_id, ease_factor, interval_days, correct_index, explanation, question, options, next_review = row
                         
-                        # Confirm user ownership
                         if owner_id != user_id:
-                            # Reject cross-user interaction
                             url_ans = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
                             background_tasks.add_task(
                                 http_client.post,
                                 url_ans,
                                 json={"callback_query_id": callback_query_id, "text": "This quiz does not belong to you."}
                             )
-                            logger.warning("Rejected cross-user quiz answer submission: user_id %d vs owner_id %d", user_id, owner_id)
                             return {"status": "ok", "detail": "quiz_ownership_rejected"}
                             
-                        # Idempotency / stale button check
-                        # If next_review is in the future, it has already been answered
                         if next_review > date.today():
-                            # Silently ignore stale callback
                             url_ans = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
                             background_tasks.add_task(http_client.post, url_ans, json={"callback_query_id": callback_query_id})
-                            logger.info("Stale callback for already answered quiz ID %d: silently ignored", quiz_id)
                             return {"status": "ok", "detail": "stale_callback_ignored"}
                             
                         is_correct = (selected_idx == correct_index)
-                        quality = 5 if is_correct else 2
                         
-                        new_ef, new_interval = update_sm2(ease_factor, interval_days, quality)
-                        new_next_review = date.today() + timedelta(days=new_interval)
-                        
-                        await cur.execute(
-                            """
-                            UPDATE quizzes
-                            SET ease_factor = %s,
-                                interval_days = %s,
-                                next_review = %s
-                            WHERE id = %s;
-                            """,
-                            (new_ef, new_interval, new_next_review, quiz_id)
-                        )
-                        # Log to quiz_answers
-                        await cur.execute(
-                            """
-                            INSERT INTO quiz_answers (user_id, quiz_id, quality)
-                            VALUES (%s, %s, %s);
-                            """,
-                            (user_id, quiz_id, quality)
-                        )
-                        await db.commit()
-                        
-                        # Acknowledge callback query
+                        # Fast path answer Callback Query immediately!
                         url_ans = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
                         payload_ans = {
                             "callback_query_id": callback_query_id,
                             "text": "Correct! 🎉" if is_correct else "Incorrect. ❌"
                         }
-                        background_tasks.add_task(http_client.post, url_ans, json=payload_ans)
+                        await http_client.post(url_ans, json=payload_ans)
                         
-                        # Format option choices
-                        if isinstance(options, str):
-                            opts = json.loads(options)
-                        else:
-                            opts = options
-                            
-                        correct_option = opts[correct_index] if 0 <= correct_index < len(opts) else ""
-                        explanation_text = explanation or ""
-                        
-                        if is_correct:
-                            result_text = f"✅ Correct!\n\n{explanation_text}\n\nNext review: {new_next_review.strftime('%Y-%m-%d')}"
-                        else:
-                            result_text = f"❌ The answer was {correct_option}\n\n{explanation_text}\n\nReview again in 1 day."
-                            
-                        url_edit = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageText"
-                        payload_edit = {
-                            "chat_id": chat_id,
-                            "message_id": callback_query["message"]["message_id"],
-                            "text": result_text,
-                            "parse_mode": "HTML",
-                            "reply_markup": {
-                                "inline_keyboard": [
-                                    [{"text": "Next Quiz →", "callback_data": "quiz:next"}]
-                                ]
-                            }
-                        }
-                        background_tasks.add_task(http_client.post, url_edit, json=payload_edit)
-                        logger.info("Processed callback_query answer for quiz %d, user %d", quiz_id, user_id)
+                        background_tasks.add_task(
+                            process_quiz_answer_db_and_ui,
+                            chat_id,
+                            user_id,
+                            quiz_id,
+                            selected_idx,
+                            is_correct,
+                            ease_factor,
+                            interval_days,
+                            correct_index,
+                            explanation,
+                            options,
+                            callback_query["message"]["message_id"],
+                            db
+                        )
+                        logger.info("Processed callback_query answer instantly, background task queued for quiz %d, user %d", quiz_id, user_id)
 
             elif data.startswith("quiz_me:"):
                 parts = data.split(":")
@@ -1031,14 +1022,10 @@ async def telegram_webhook(
                         opts = options_val
                         
                     inline_keyboard = [
-                        [
-                            {"text": f"A. {opts[0]}", "callback_data": f"quiz:{quiz_id}:0"},
-                            {"text": f"B. {opts[1]}", "callback_data": f"quiz:{quiz_id}:1"}
-                        ],
-                        [
-                            {"text": f"C. {opts[2]}", "callback_data": f"quiz:{quiz_id}:2"},
-                            {"text": f"D. {opts[3]}", "callback_data": f"quiz:{quiz_id}:3"}
-                        ]
+                        [{"text": f"A. {opts[0]}", "callback_data": f"quiz:{quiz_id}:0"}],
+                        [{"text": f"B. {opts[1]}", "callback_data": f"quiz:{quiz_id}:1"}],
+                        [{"text": f"C. {opts[2]}", "callback_data": f"quiz:{quiz_id}:2"}],
+                        [{"text": f"D. {opts[3]}", "callback_data": f"quiz:{quiz_id}:3"}]
                     ]
                         
                     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -1103,49 +1090,54 @@ async def telegram_webhook(
                 if not args:
                     search_msg = "Please provide a search query: /search machine learning"
                 else:
-                    from backend.services.search_service import hybrid_search
-                    results = await hybrid_search(args, user_id, db)
-                    if not results:
-                        search_msg = f"🔍 No results found for \"{args}\"."
+                    from backend.services.ai_cascade import check_prompt_injection
+                    injection_warning = check_prompt_injection(args)
+                    if injection_warning:
+                        search_msg = f"🔍 Query: {args}\n💡 {injection_warning}"
                     else:
-                        # Limit to top-5 results
-                        results_limited = results[:5]
-                        
-                        # Generate synthesised RAG answer if results count >= 3
-                        answer = None
-                        if len(results_limited) >= 3:
-                            from backend.services.ai_cascade import AICascade
-                            cascade = AICascade()
-                            try:
-                                summaries = [r["summary"] or "" for r in results_limited]
-                                answer = await cascade.answer_question(args, summaries)
-                            except Exception as e:
-                                logger.error("RAG answer generation in bot /search failed: %s", e)
-                                answer = None
-                        
-                        lines = [f"🔍 Query: {args}"]
-                        if answer:
-                            lines.append(f"💡 {answer}")
-                        lines.append("")
-                        lines.append("Sources:")
-                        for idx, item in enumerate(results_limited, 1):
-                            source_type = item["source_type"]
-                            title = item["title"]
-                            display_title = title or (
-                                "Voice note" if source_type == "voice"
-                                else "PDF" if source_type == "pdf"
-                                else "Image" if source_type in ("photo", "image")
-                                else "Link" if source_type == "url"
-                                else "Text"
-                            )
-                            summary = item.get("summary") or ""
-                            summary_snippet = summary[:100] + "..." if len(summary) > 100 else summary
-                            summary_part = f" - {summary_snippet}" if summary_snippet else ""
-                            lines.append(f"{idx}. [{source_type}] {display_title}{summary_part} — /file_{item['id']}")
-                        search_msg = "\n".join(lines)
+                        from backend.services.search_service import hybrid_search
+                        results = await hybrid_search(args, user_id, db)
+                        if not results:
+                            search_msg = f"🔍 No results found for \"{args}\"."
+                        else:
+                            # Limit to top-5 results
+                            results_limited = results[:5]
+                            
+                            # Generate synthesised RAG answer if results count >= 3
+                            answer = None
+                            if len(results_limited) >= 3:
+                                from backend.services.ai_cascade import AICascade
+                                cascade = AICascade()
+                                try:
+                                    summaries = [r["summary"] or "" for r in results_limited]
+                                    answer = await cascade.answer_question(args, summaries)
+                                except Exception as e:
+                                    logger.error("RAG answer generation in bot /search failed: %s", e)
+                                    answer = None
+                            
+                            lines = [f"🔍 Query: {args}"]
+                            if answer:
+                                lines.append(f"💡 {answer}")
+                            lines.append("")
+                            lines.append("Sources:")
+                            for idx, item in enumerate(results_limited, 1):
+                                source_type = item["source_type"]
+                                title = item["title"]
+                                display_title = title or (
+                                    "Voice note" if source_type == "voice"
+                                    else "PDF" if source_type == "pdf"
+                                    else "Image" if source_type in ("photo", "image")
+                                    else "Link" if source_type == "url"
+                                    else "Text"
+                                )
+                                summary = item.get("summary") or ""
+                                summary_snippet = summary[:100] + "..." if len(summary) > 100 else summary
+                                summary_part = f" - {summary_snippet}" if summary_snippet else ""
+                                lines.append(f"{idx}. [{source_type}] {display_title}{summary_part} — /file_{item['id']}")
+                            search_msg = "\n".join(lines)
                         
                 background_tasks.add_task(send_telegram_ack, chat_id, search_msg)
-                logger.info("Processed /search %s for chat_id %s", args, chat_id)
+                logger.info("Processed /search %s for chat_id %s", mask_pii(args), chat_id)
                 return {"status": "ok", "detail": "search_processed"}
 
             elif command_part == "/list":
@@ -1808,14 +1800,10 @@ async def process_quiz_me_callback(chat_id: str, user_id: int, item_id: int, cal
             opts = options_val
 
         inline_keyboard = [
-            [
-                {"text": f"A. {opts[0]}", "callback_data": f"quiz:{quiz_id}:0"},
-                {"text": f"B. {opts[1]}", "callback_data": f"quiz:{quiz_id}:1"}
-            ],
-            [
-                {"text": f"C. {opts[2]}", "callback_data": f"quiz:{quiz_id}:2"},
-                {"text": f"D. {opts[3]}", "callback_data": f"quiz:{quiz_id}:3"}
-            ]
+            [{"text": f"A. {opts[0]}", "callback_data": f"quiz:{quiz_id}:0"}],
+            [{"text": f"B. {opts[1]}", "callback_data": f"quiz:{quiz_id}:1"}],
+            [{"text": f"C. {opts[2]}", "callback_data": f"quiz:{quiz_id}:2"}],
+            [{"text": f"D. {opts[3]}", "callback_data": f"quiz:{quiz_id}:3"}]
         ]
 
         url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -2250,7 +2238,18 @@ async def handle_conversational_rag(
     """
     try:
         from backend.services.search_service import rag_semantic_search
-        from backend.services.ai_cascade import AICascade
+        from backend.services.ai_cascade import AICascade, check_prompt_injection
+
+        # Check for query injection first
+        injection_warning = check_prompt_injection(query)
+        if injection_warning:
+            await send_telegram_ack(
+                chat_id,
+                injection_warning,
+                None,
+                reply_to_message_id
+            )
+            return
 
         # 1. Retrieve context
         items = await rag_semantic_search(query, user_id, db, limit=12)
@@ -2262,7 +2261,7 @@ async def handle_conversational_rag(
                 None,
                 reply_to_message_id
             )
-            logger.info("Conversational query: user_id=%d query=%r query_type=conversational results=0", user_id, query)
+            logger.info("Conversational query: user_id=%d query=%r query_type=conversational results=0", user_id, mask_pii(query))
             return
 
         # 2. Generate synthesized answer
@@ -2276,8 +2275,8 @@ async def handle_conversational_rag(
         logger.info(
             "Conversational query: user_id=%d, query=%r, answer=%r",
             user_id,
-            query,
-            answer,
+            mask_pii(query),
+            mask_pii(answer),
             extra={"query_type": "conversational"}
         )
 
@@ -2310,5 +2309,81 @@ async def handle_conversational_rag(
             )
         except Exception:
             pass
+
+
+async def process_quiz_answer_db_and_ui(
+    chat_id: str,
+    user_id: int,
+    quiz_id: int,
+    selected_idx: int,
+    is_correct: bool,
+    ease_factor: float,
+    interval_days: int,
+    correct_index: int,
+    explanation: str,
+    options: Any,
+    message_id: int,
+    db: psycopg.AsyncConnection
+):
+    from backend.services.sm2 import update_sm2
+    from datetime import date, timedelta
+    import httpx
+    import json
+    
+    quality = 5 if is_correct else 2
+    new_ef, new_interval = update_sm2(ease_factor, interval_days, quality)
+    new_next_review = date.today() + timedelta(days=new_interval)
+    
+    try:
+        async with db.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE quizzes
+                SET ease_factor = %s,
+                    interval_days = %s,
+                    next_review = %s
+                WHERE id = %s;
+                """,
+                (new_ef, new_interval, new_next_review, quiz_id)
+            )
+            await cur.execute(
+                """
+                INSERT INTO quiz_answers (user_id, quiz_id, quality)
+                VALUES (%s, %s, %s);
+                """,
+                (user_id, quiz_id, quality)
+            )
+            await db.commit()
+                    
+        if isinstance(options, str):
+            opts = json.loads(options)
+        else:
+            opts = options
+            
+        correct_option = opts[correct_index] if 0 <= correct_index < len(opts) else ""
+        explanation_text = explanation or ""
+        
+        if is_correct:
+            result_text = f"✅ Correct!\n\n{explanation_text}\n\nNext review: {new_next_review.strftime('%Y-%m-%d')}"
+        else:
+            result_text = f"❌ The answer was {correct_option}\n\n{explanation_text}\n\nReview again in 1 day."
+            
+        url_edit = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageText"
+        payload_edit = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": result_text,
+            "parse_mode": "HTML",
+            "reply_markup": {
+                "inline_keyboard": [
+                    [{"text": "Next Quiz →", "callback_data": "quiz:next"}]
+                ]
+            }
+        }
+        await http_client.post(url_edit, json=payload_edit)
+            
+    except Exception as e:
+        logger.error("Failed to save quiz answer for quiz_id %d in background: %s", quiz_id, e)
+
 
 

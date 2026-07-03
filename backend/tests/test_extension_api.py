@@ -212,3 +212,180 @@ async def test_extension_save_duplicate_url(client, mock_db):
     assert data["title"] == "Existing Title"
     assert data["summary"] == "Existing Summary"
     assert "oldtag" in data["tags"]
+
+
+@pytest.mark.anyio
+async def test_extension_save_with_context_note_success(client, mock_db, monkeypatch):
+    """Verify saving from extension with a custom context_note maps the note to DB."""
+    import time
+    token_payload = {
+        "sub": "42",
+        "chat_id": "123456",
+        "exp": int(time.time()) + 3600
+    }
+    jwt_token = generate_jwt(token_payload, settings.JWT_SECRET)
+
+    async def mock_fetchone_user():
+        if "SELECT id" in mock_db.executed[-1][0]:
+            return (42, "123456")
+        return (10, datetime.now(timezone.utc))
+        
+    mock_db.fetchone = mock_fetchone_user
+
+    async def mock_summarise(self, text):
+        return {"summary": "AI Summary", "tags": ["tag1"]}
+    monkeypatch.setattr("backend.services.ai_cascade.AICascade.summarise", mock_summarise)
+
+    async def mock_embed(text):
+        return [0.1] * 384
+    monkeypatch.setattr("backend.services.search_service.embed_text", mock_embed)
+
+    resp = client.post(
+        "/api/extension/save",
+        json={
+            "url": "https://google.com/context-test", 
+            "title": "Context Title",
+            "context_note": "This is my custom user context note!"
+        },
+        headers={"Authorization": f"Bearer {jwt_token}"}
+    )
+
+    assert resp.status_code == 201
+    
+    # Check that context_note was passed to the INSERT statement
+    insert_queries = [query for query, params in mock_db.executed if "INSERT INTO items" in query]
+    assert len(insert_queries) == 1
+    
+    # Retrieve the params of the insert query
+    params = [params for query, params in mock_db.executed if "INSERT INTO items" in query][0]
+    assert "This is my custom user context note!" in params
+
+
+@pytest.mark.anyio
+async def test_extension_check_already_saved(client, mock_db):
+    import time
+    token_payload = {
+        "sub": "42",
+        "chat_id": "123456",
+        "exp": int(time.time()) + 3600
+    }
+    jwt_token = generate_jwt(token_payload, settings.JWT_SECRET)
+
+    # Mock user exists, then SELECT id returned (exists)
+    async def mock_fetchone_already_saved():
+        if "users" in mock_db.executed[-1][0]:
+            return (42, "123456")
+        return (100,)
+    mock_db.fetchone = mock_fetchone_already_saved
+    
+    resp = client.get(
+        "/api/extension/check?url=https://existing.com",
+        headers={"Authorization": f"Bearer {jwt_token}"}
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"exists": True}
+
+
+@pytest.mark.anyio
+async def test_extension_check_not_saved(client, mock_db):
+    import time
+    token_payload = {
+        "sub": "42",
+        "chat_id": "123456",
+        "exp": int(time.time()) + 3600
+    }
+    jwt_token = generate_jwt(token_payload, settings.JWT_SECRET)
+
+    # Mock user exists, then SELECT id returns None (does not exist)
+    async def mock_fetchone_not_saved():
+        if "SELECT id" in mock_db.executed[-1][0] and "users" in mock_db.executed[-1][0]:
+            return (42, "123456")
+        return None
+    mock_db.fetchone = mock_fetchone_not_saved
+    
+    resp = client.get(
+        "/api/extension/check?url=https://new-url.com",
+        headers={"Authorization": f"Bearer {jwt_token}"}
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"exists": False}
+
+
+@pytest.mark.anyio
+async def test_extension_download_success(client):
+    resp = client.get("/api/extension/download")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+    assert "attachment" in resp.headers.get("content-disposition", "") or "filename=" in resp.headers.get("content-disposition", "")
+
+
+@pytest.mark.anyio
+async def test_extension_suggest_tags_success(client, mock_db, monkeypatch):
+    """Verify that calling suggest_tags endpoint returns the AI generated tags."""
+    import time
+    token_payload = {
+        "sub": "42",
+        "chat_id": "123456",
+        "exp": int(time.time()) + 3600
+    }
+    jwt_token = generate_jwt(token_payload, settings.JWT_SECRET)
+
+    async def mock_fetchone_user():
+        return (42, "123456")
+    mock_db.fetchone = mock_fetchone_user
+
+    async def mock_summarise(self, text):
+        return {"summary": "AI Summary", "tags": ["rust", "wasm"]}
+    monkeypatch.setattr("backend.services.ai_cascade.AICascade.summarise", mock_summarise)
+
+    resp = client.get(
+        "/api/extension/suggest_tags?url=https://test.com&title=RustProgramming&text=SampleText",
+        headers={"Authorization": f"Bearer {jwt_token}"}
+    )
+    assert resp.status_code == 200
+    assert resp.json() == ["rust", "wasm"]
+
+
+@pytest.mark.anyio
+async def test_extension_save_with_custom_tags_success(client, mock_db, monkeypatch):
+    """Verify saving from extension with custom tags overrides AI tag generation."""
+    import time
+    token_payload = {
+        "sub": "42",
+        "chat_id": "123456",
+        "exp": int(time.time()) + 3600
+    }
+    jwt_token = generate_jwt(token_payload, settings.JWT_SECRET)
+
+    async def mock_fetchone_user():
+        if "SELECT id" in mock_db.executed[-1][0]:
+            return (42, "123456")
+        return (10, datetime.now(timezone.utc))
+    mock_db.fetchone = mock_fetchone_user
+
+    async def mock_summarise(self, text):
+        return {"summary": "AI Summary", "tags": ["tag-ai"]}
+    monkeypatch.setattr("backend.services.ai_cascade.AICascade.summarise", mock_summarise)
+
+    async def mock_embed(text):
+        return [0.1] * 384
+    monkeypatch.setattr("backend.services.search_service.embed_text", mock_embed)
+
+    resp = client.post(
+        "/api/extension/save",
+        json={
+            "url": "https://google.com/custom-tags-test",
+            "title": "Custom Tags Title",
+            "tags": ["custom-t1", "custom-t2"]
+        },
+        headers={"Authorization": f"Bearer {jwt_token}"}
+    )
+
+    assert resp.status_code == 201
+    
+    # Retrieve the params of the insert query
+    params = [params for query, params in mock_db.executed if "INSERT INTO items" in query][0]
+    # Check that custom tags are stored instead of AI tags ["tag-ai"]
+    assert "custom-t1" in params[7]
+    assert "custom-t2" in params[7]
+    assert "tag-ai" not in params[7]

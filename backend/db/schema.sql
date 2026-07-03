@@ -33,6 +33,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_last_sent TIMESTAMP DEFAUL
 ALTER TABLE items ADD COLUMN IF NOT EXISTS context_note TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS passive_context JSONB;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS save_time_bucket VARCHAR(20);
+ALTER TABLE items ADD COLUMN IF NOT EXISTS category VARCHAR(100);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS near_miss_lower_bound NUMERIC(4, 3) DEFAULT 0.710;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_recall_moment_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS self_description TEXT;
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS items (
     context_note TEXT,                      -- User-provided context note
     context_prompt TEXT,                    -- AI-generated custom context prompt question
     passive_context JSONB,                  -- Captured ingest event metadata
+    category     VARCHAR(100),              -- AI-classified topic category
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
@@ -209,6 +211,7 @@ CREATE TABLE IF NOT EXISTS cognitive_bridges (
     user_id_2           INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     compatibility_score NUMERIC(5, 2) DEFAULT 0.0,
     synergy_description TEXT,
+    last_ceremony_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (user_id_1, user_id_2),
     CHECK (user_id_1 < user_id_2)
@@ -224,4 +227,17 @@ CREATE TABLE IF NOT EXISTS bridge_invites (
     code       VARCHAR(50) UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 16. TAG PORTRAITS TABLE
+CREATE TABLE IF NOT EXISTS tag_portraits (
+    id           SERIAL PRIMARY KEY,
+    user_id      INT REFERENCES users(id) ON DELETE CASCADE,
+    tag          VARCHAR(100) NOT NULL,
+    description  TEXT NOT NULL,
+    icon         VARCHAR(100) NOT NULL,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, tag)
+);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pulse_score NUMERIC DEFAULT 0;
 

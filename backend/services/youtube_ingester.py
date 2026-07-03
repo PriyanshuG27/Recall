@@ -168,6 +168,14 @@ async def ingest_youtube(url: str, user_id: int, db: AsyncConnection, user_conte
     # 5. If we have a transcript (from audio or captions), process and save it
     if transcript:
         try:
+            # Sanitize transcript to correct misheard tech/design tool names
+            try:
+                logger.info("  [YouTube Ingestion] Sanitizing transcript for misheard entity names...")
+                cascade = AICascade()
+                transcript = await cascade.sanitize_transcript(transcript)
+            except Exception as e:
+                logger.warning("  [YouTube Ingestion] Transcript sanitization failed: %s", e)
+
             summarizer_input = transcript
             if user_context:
                 summarizer_input = f"[User's Note/Context: {user_context}]\n" + transcript
@@ -526,6 +534,14 @@ async def ingest_instagram(url: str, user_id: int, db: AsyncConnection, user_con
 
     if transcript:
         try:
+            # Sanitize transcript to correct misheard tech/design tool names
+            try:
+                logger.info("  [Instagram Ingestion] Sanitizing transcript for misheard entity names...")
+                cascade = AICascade()
+                transcript = await cascade.sanitize_transcript(transcript)
+            except Exception as e:
+                logger.warning("  [Instagram Ingestion] Transcript sanitization failed: %s", e)
+
             # 1. Fetch metadata first (best effort — no crash on failure)
             video_title = "Instagram Video"
             video_description = None

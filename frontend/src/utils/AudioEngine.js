@@ -119,6 +119,91 @@ const AudioEngine = {
     }
   },
 
+  /* ── Synthesize impact thud ── */
+  playThud() {
+    if (this.isMuted()) return;
+    try {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(100, now);
+      osc.frequency.exponentialRampToValueAtTime(35, now + 0.25);
+
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(now + 0.32);
+    } catch (e) {
+      console.warn('AudioEngine: thud sound failed', e);
+    }
+  },
+
+  /* ── Synthesize soft gold seam chime ── */
+  playChime() {
+    if (this.isMuted()) return;
+    try {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+      const frequencies = [880, 1320, 1760]; // shimmering harmonics
+
+      frequencies.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.04);
+
+        gain.gain.setValueAtTime(0.001, now + idx * 0.04);
+        gain.gain.linearRampToValueAtTime(0.02, now + idx * 0.04 + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.04 + 1.2);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + idx * 0.04);
+        osc.stop(now + idx * 0.04 + 1.25);
+      });
+    } catch (e) {
+      console.warn('AudioEngine: chime sound failed', e);
+    }
+  },
+
+  /* ── Synthesize faint low dissonant warning ── */
+  playDissonantTone() {
+    if (this.isMuted()) return;
+    try {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+      const freqs = [75, 78.5]; // beating frequencies
+
+      freqs.forEach((freq) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now);
+
+        gain.gain.setValueAtTime(0.015, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(now + 0.95);
+      });
+    } catch (e) {
+      console.warn('AudioEngine: dissonant tone failed', e);
+    }
+  },
+
 };
 
 export default AudioEngine;
