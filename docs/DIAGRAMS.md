@@ -124,7 +124,7 @@ Extract OpenGraph & Text"]
     H3 --> I
 
     I --> J["Generate 384-dim Vector
-(all-MiniLM-L6-v2)"]
+(BAAI/bge-small-en-v1.5)"]
     J --> K["Fernet Encrypt raw_text"]
     K --> L["Save to items table
 (Partitioned by Range)"]
