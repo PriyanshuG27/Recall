@@ -181,6 +181,51 @@ flowchart TB
 
 ---
 
+## 🛠️ Technology Stack & Ecosystem
+
+<p align="center">
+  <!-- Core Stack -->
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/FastAPI-0.111+-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/React-18.3+-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/Vite-6.4+-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/Three.js-R3F-000000?style=flat-square&logo=three.js&logoColor=white" alt="Three.js" />
+  <br>
+  <!-- Data & Cache -->
+  <img src="https://img.shields.io/badge/Neon_PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/pgvector-HNSW_384d-2EA44F?style=flat-square&logo=postgresql&logoColor=white" alt="pgvector" />
+  <img src="https://img.shields.io/badge/pg__trgm-GIN_Trigram-007ACC?style=flat-square" alt="pg_trgm" />
+  <img src="https://img.shields.io/badge/Upstash_Redis-REST_Queue-00E9A3?style=flat-square&logo=redis&logoColor=black" alt="Upstash Redis" />
+  <img src="https://img.shields.io/badge/Fernet-AES_128-D9381E?style=flat-square" alt="Fernet Cryptography" />
+  <br>
+  <!-- AI Cascade & Models -->
+  <img src="https://img.shields.io/badge/Modal_GPU-Whisper_%2B_Qwen-000000?style=flat-square" alt="Modal GPU" />
+  <img src="https://img.shields.io/badge/FastEmbed-ONNX_bge_small-FF6F00?style=flat-square" alt="FastEmbed" />
+  <img src="https://img.shields.io/badge/Hugging_Face-PaddleOCR-FFD21E?style=flat-square&logo=huggingface&logoColor=black" alt="Hugging Face PaddleOCR" />
+  <img src="https://img.shields.io/badge/Groq-3--Tier_Cascade-F05032?style=flat-square" alt="Groq" />
+  <img src="https://img.shields.io/badge/Google_Gemini-API-8E44AD?style=flat-square&logo=google&logoColor=white" alt="Gemini" />
+  <img src="https://img.shields.io/badge/OpenRouter-API-4A90E2?style=flat-square" alt="OpenRouter" />
+  <br>
+  <!-- Hosting & Tools -->
+  <img src="https://img.shields.io/badge/Koyeb-Serverless_Backend-000000?style=flat-square" alt="Koyeb" />
+  <img src="https://img.shields.io/badge/Vercel-Frontend_SPA-000000?style=flat-square&logo=vercel&logoColor=white" alt="Vercel" />
+  <img src="https://img.shields.io/badge/Pytest-525_Tests-0A9EDC?style=flat-square&logo=pytest&logoColor=white" alt="Pytest" />
+  <img src="https://img.shields.io/badge/Playwright-E2E-2EAD33?style=flat-square&logo=playwright&logoColor=white" alt="Playwright" />
+</p>
+
+| Layer | Primary Technologies | Technical Details |
+|---|---|---|
+| **Backend Core** | FastAPI · Python 3.11+ · Pydantic v2 · Asyncpg | High-performance async REST API with Pydantic BaseSettings and lifespan pool management |
+| **Frontend & 3D** | React 18.3 · Vite 6.4 · Three.js · React Three Fiber | Single Page Application with 60 FPS 3D force-directed graph rendering and custom SPA router |
+| **Database & Search** | Neon PostgreSQL 16 · `pgvector` · `pg_trgm` | 15 tables with 384-dim HNSW cosine vector index (`m=16`, `ef_construction=64`) and GIN trigram text search |
+| **Queue & Cryptography** | Upstash Redis · Fernet AES-128 | Async task queue (`recall:tasks`), sliding rate limits, and zero-trust encryption at rest |
+| **AI Processing Cascade** | Modal GPU · Groq · Gemini · OpenRouter · FastEmbed | Qwen / Whisper on Modal GPU, FastEmbed ONNX embeddings, Hugging Face PaddleOCR, multi-tier LLM failover |
+| **Production Infrastructure** | Koyeb Serverless · Vercel · Modal GPU · Upstash | Backend hosted on Koyeb Serverless, Vercel SPA frontend, Modal GPU serverless runners |
+| **Testing & Quality** | Pytest (525+ tests) · Vitest · Playwright E2E · k6 | Full unit, integration, security penetration, and performance benchmark suites |
+
+
+---
+
 ## ⚡ Quick Start
 
 Launch Recall locally in under 3 minutes.
