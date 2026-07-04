@@ -39,81 +39,50 @@ window.IntersectionObserver = MockIntersectionObserver;
 
 vi.mock('@phosphor-icons/react', () => {
   const React = require('react');
-  const makeMock = (name) => {
-    return function MockIcon(props) {
-      return React.createElement('span', { 'data-testid': `icon-${name}`, ...props }, name);
-    };
-  };
-  return {
-    SquaresFour: makeMock('SquaresFour'),
-    MagnifyingGlass: makeMock('MagnifyingGlass'),
-    GoogleLogo: makeMock('GoogleLogo'),
-    CloudX: makeMock('CloudX'),
-    CloudArrowUp: makeMock('CloudArrowUp'),
-    SignOut: makeMock('SignOut'),
-    CaretDown: makeMock('CaretDown'),
-    CaretUp: makeMock('CaretUp'),
-    ShareNetwork: makeMock('ShareNetwork'),
-    List: makeMock('List'),
-    Link: makeMock('Link'),
-    Microphone: makeMock('Microphone'),
-    FilePdf: makeMock('FilePdf'),
-    Image: makeMock('Image'),
-    Note: makeMock('Note'),
-    DotsThree: makeMock('DotsThree'),
-    Trash: makeMock('Trash'),
-    Eye: makeMock('Eye'),
-    PaperPlane: makeMock('PaperPlane'),
-    Binoculars: makeMock('Binoculars'),
-    CheckCircle: makeMock('CheckCircle'),
-    XCircle: makeMock('XCircle'),
-    Info: makeMock('Info'),
-    Warning: makeMock('Warning'),
-    Gear: makeMock('Gear'),
-    X: makeMock('X'),
-    Bell: makeMock('Bell'),
-    BookOpen: makeMock('BookOpen'),
-    TextT: makeMock('TextT'),
-    ChartBar: makeMock('ChartBar'),
-    Trophy: makeMock('Trophy'),
-    Hourglass: makeMock('Hourglass'),
-    Percent: makeMock('Percent'),
-    Compass: makeMock('Compass'),
-    Flame: makeMock('Flame'),
-    User: makeMock('User'),
-    Globe: makeMock('Globe'),
-    SpeakerHigh: makeMock('SpeakerHigh'),
-    SpeakerSlash: makeMock('SpeakerSlash'),
-    CalendarPlus: makeMock('CalendarPlus'),
-    Plus: makeMock('Plus'),
-    Clock: makeMock('Clock'),
-    Database: makeMock('Database'),
-    Rows: makeMock('Rows'),
-    ArrowsInLine: makeMock('ArrowsInLine'),
-    ArrowsOutLine: makeMock('ArrowsOutLine'),
-    Play: makeMock('Play'),
-    Pause: makeMock('Pause'),
-    Selection: makeMock('Selection'),
-    ArrowsIn: makeMock('ArrowsIn'),
-    Crosshair: makeMock('Crosshair'),
-    Tag: makeMock('Tag'),
-    Activity: makeMock('Activity'),
-    Folder: makeMock('Folder'),
-    GoogleDriveLogo: makeMock('GoogleDriveLogo'),
-    Lightning: makeMock('Lightning'),
-    ClockCounterClockwise: makeMock('ClockCounterClockwise'),
-    Hash: makeMock('Hash'),
-    ArrowSquareOut: makeMock('ArrowSquareOut'),
-    CaretRight: makeMock('CaretRight'),
-    Sparkle: makeMock('Sparkle'),
-    Copy: makeMock('Copy'),
-    Check: makeMock('Check'),
-    UploadSimple: makeMock('UploadSimple'),
-    DownloadSimple: makeMock('DownloadSimple'),
-    ArrowRight: makeMock('ArrowRight'),
-    BookmarkSimple: makeMock('BookmarkSimple'),
-    Lightning: makeMock('Lightning'),
-  };
+  return new Proxy({}, {
+    get: (target, name) => {
+      if (
+        name === 'then' || 
+        name === '__esModule' || 
+        name === 'default' || 
+        typeof name === 'symbol'
+      ) {
+        return undefined;
+      }
+      return function MockIcon(props) {
+        return React.createElement('span', { 'data-testid': `icon-${name}`, ...props }, name);
+      };
+    },
+    has: (target, name) => {
+      if (
+        name === 'then' || 
+        name === '__esModule' || 
+        name === 'default' || 
+        typeof name === 'symbol'
+      ) {
+        return false;
+      }
+      return true;
+    },
+    getOwnPropertyDescriptor: (target, name) => {
+      if (
+        name === 'then' || 
+        name === '__esModule' || 
+        name === 'default' || 
+        typeof name === 'symbol'
+      ) {
+        return undefined;
+      }
+      return {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: function MockIcon(props) {
+          return React.createElement('span', { 'data-testid': `icon-${name}`, ...props }, name);
+        }
+      };
+    }
+  });
 });
 
 
@@ -169,11 +138,19 @@ const mockContext = {
   quadraticCurveTo: vi.fn(),
   stroke: vi.fn(),
   arc: vi.fn(),
+  arcTo: vi.fn(),
   fill: vi.fn(),
+  closePath: vi.fn(),
+  lineTo: vi.fn(),
   createRadialGradient: vi.fn(() => ({
     addColorStop: vi.fn()
   })),
+  createLinearGradient: vi.fn(() => ({
+    addColorStop: vi.fn()
+  })),
   fillText: vi.fn(),
+  fillRect: vi.fn(),
+  measureText: vi.fn(() => ({ width: 100 })),
   setLineDash: vi.fn()
 };
 
@@ -207,7 +184,44 @@ vi.mock('@react-three/fiber', () => {
 vi.mock('@react-three/drei', () => {
   const React = require('react');
   return {
-    Html: ({ children }) => React.createElement('div', { 'data-testid': 'r3f-html' }, children)
+    Html: ({ children }) => React.createElement('div', { 'data-testid': 'r3f-html' }, children),
+    OrbitControls: () => React.createElement('div', { 'data-testid': 'r3f-orbitcontrols' }),
+    Line: () => React.createElement('div', { 'data-testid': 'r3f-line' })
   };
 });
+
+// Mock ResizeObserver globally for JSDOM
+class MockResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+window.ResizeObserver = MockResizeObserver;
+
+window.URL.createObjectURL = vi.fn();
+window.URL.revokeObjectURL = vi.fn();
+
+// Global GSAP Mock with regular functions to prevent vi.restoreAllMocks reset failures
+const tlMock = {
+  fromTo: function() { return this; },
+  to: function() { return this; },
+  kill: function() { return this; },
+};
+
+vi.mock('gsap', () => {
+  return {
+    default: {
+      timeline: (config) => {
+        if (config && config.onComplete) {
+          setTimeout(() => config.onComplete(), 0);
+        }
+        return tlMock;
+      },
+      fromTo: () => tlMock,
+      to: () => tlMock,
+    }
+  };
+});
+
+
 

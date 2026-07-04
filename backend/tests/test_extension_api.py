@@ -389,3 +389,24 @@ async def test_extension_save_with_custom_tags_success(client, mock_db, monkeypa
     assert "custom-t1" in params[7]
     assert "custom-t2" in params[7]
     assert "tag-ai" not in params[7]
+
+def test_pwa_share_target_endpoint(client, mock_db):
+    """POST /api/share-target receives form data from PWA share target and redirects to /archive."""
+    from datetime import timedelta
+    from backend.routes.auth import generate_jwt
+    from backend.config import settings
+    token_payload = {
+        "sub": "42",
+        "chat_id": 12345,
+        "exp": datetime.now(timezone.utc) + timedelta(days=1)
+    }
+    jwt_token = generate_jwt(token_payload, settings.JWT_SECRET)
+
+    response = client.post(
+        "/api/share-target",
+        data={"title": "Interesting Article", "text": "Check this out https://example.com/pwa-test"},
+        cookies={"recall_session": jwt_token},
+        follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/archive?status=shared_success"

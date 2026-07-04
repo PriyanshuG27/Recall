@@ -3,6 +3,7 @@ import NodePanel from '../components/NodePanel';
 import ArchiveCylinder from '../canvas/ArchiveCylinder';
 import AddNoteModal from '../components/AddNoteModal';
 import AudioEngine from '../utils/AudioEngine';
+import { useToast } from '../components/Toast';
 
 /* ============================================================
    Archive Room — Observatory 3D Cylindrical Review.
@@ -19,6 +20,7 @@ import AudioEngine from '../utils/AudioEngine';
    - Active index tracking with interactive dot pagination window
    ============================================================ */
 export default function Archive({ initialSelectedItem, onClearInitialSelect }) {
+  const { addToast } = useToast();
   const [items, setSelectedItemForArchive] = useState([]);
   const [itemsList, setItems] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -52,11 +54,20 @@ export default function Archive({ initialSelectedItem, onClearInitialSelect }) {
     const updateSearchQuery = () => {
       const params = new URLSearchParams(window.location.search);
       setSearchQuery(params.get('search') || '');
+
+      const status = params.get('status');
+      if (status === 'shared_success') {
+        addToast('Shared content ingested into your memory graph! 🧠', 'success');
+        window.history.replaceState({}, '', window.location.pathname);
+      } else if (status === 'share_failed') {
+        addToast('Failed to ingest shared content. Please try again.', 'error');
+        window.history.replaceState({}, '', window.location.pathname);
+      }
     };
     updateSearchQuery();
     window.addEventListener('popstate', updateSearchQuery);
     return () => window.removeEventListener('popstate', updateSearchQuery);
-  }, []);
+  }, [addToast]);
 
   // Listen to custom popState select parameters
   useEffect(() => {

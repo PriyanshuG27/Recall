@@ -8,12 +8,15 @@ import logging
 from datetime import datetime, timezone, timedelta
 from psycopg import AsyncConnection
 
+from backend.services.redis_client import redis
+
 logger = logging.getLogger(__name__)
 
 async def upsert_user(chat_id: str, db: AsyncConnection) -> int:
     """
     Idempotently inserts a user by telegram_chat_id (stored as VARCHAR).
     If a conflict occurs, fetches the existing user's internal ID.
+    Uses in-memory dict cache for microsecond lookups.
     
     Returns:
         int: The internal user ID (primary key).

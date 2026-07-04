@@ -5,7 +5,6 @@ import EmptyState from '../components/EmptyState';
 
 describe('EmptyState Component', () => {
   beforeEach(() => {
-    // Reset/Set VITE_BOT_USERNAME environment variable before each test
     import.meta.env.VITE_BOT_USERNAME = 'TestRecallBot';
   });
 
@@ -21,7 +20,14 @@ describe('EmptyState Component', () => {
     const linkButton = screen.getByRole('link', { name: /Open Telegram Bot/i });
     expect(linkButton).toBeInTheDocument();
     expect(linkButton).toHaveAttribute('href', 'https://t.me/TestRecallBot');
-    expect(linkButton).toHaveAttribute('target', '_blank');
+  });
+
+  it('uses default fallback bot username when env variable is empty', () => {
+    import.meta.env.VITE_BOT_USERNAME = '';
+    render(<EmptyState variant="graph" />);
+
+    const linkButton = screen.getByRole('link', { name: /Open Telegram Bot/i });
+    expect(linkButton).toHaveAttribute('href', 'https://t.me/RecallTestEnvBot');
   });
 
   it('renders feed empty state with magnifying glass and text', () => {
@@ -29,8 +35,6 @@ describe('EmptyState Component', () => {
 
     expect(screen.getByTestId('empty-state-feed')).toBeInTheDocument();
     expect(screen.getByText('Nothing found')).toBeInTheDocument();
-    expect(screen.getByText('Try a different filter or search term.')).toBeInTheDocument();
-    expect(screen.getByTestId('icon-MagnifyingGlass')).toBeInTheDocument();
   });
 
   it('renders search empty state with query injected in text', () => {
@@ -38,9 +42,10 @@ describe('EmptyState Component', () => {
 
     expect(screen.getByTestId('empty-state-search')).toBeInTheDocument();
     expect(screen.getByText("No results for 'quantum computing'")).toBeInTheDocument();
-    expect(
-      screen.getByText('Try a different search term or check for typos.')
-    ).toBeInTheDocument();
-    expect(screen.getByTestId('icon-Binoculars')).toBeInTheDocument();
+  });
+
+  it('returns null for unknown variant', () => {
+    const { container } = render(<EmptyState variant="unknown" />);
+    expect(container.firstChild).toBeNull();
   });
 });

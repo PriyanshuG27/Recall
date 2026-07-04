@@ -262,7 +262,7 @@ function LiquidOrb({ onClick }) {
 /**
  * Main Assistant ChatDrawer Component
  */
-export default function ChatDrawer({ isOpen, onClose, onOpen, totalSaves, onItemSelect }) {
+export default function ChatDrawer({ isOpen, onClose, onOpen, totalSaves, onItemSelect, onCitationClick }) {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState([]);
   const [sources, setSources] = useState([]);
@@ -314,6 +314,10 @@ export default function ChatDrawer({ isOpen, onClose, onOpen, totalSaves, onItem
     const sourceItem = sources[index];
     if (sourceItem) {
       setHighlightedSourceId(sourceItem.id);
+      
+      if (typeof onCitationClick === 'function') {
+        onCitationClick(sourceItem.id, sourceItem);
+      }
       
       // Auto scroll to source card
       setTimeout(() => {

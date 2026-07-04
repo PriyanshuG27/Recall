@@ -5,8 +5,6 @@
    undertones that feel like a physical space, not a screen.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
-
 :root {
   /* ── Observatory "Signals Room" Palette ──────────────────────────────── */
   --bg-void:          #08070A;   /* Midnight Obsidian — base canvas          */
@@ -376,3 +374,27 @@ body.custom-cursor-active * {
   bottom: -80px;
   left: -80px;
 }
+
+/* ==========================================================================
+   PERFORMANCE OPTIMIZATIONS (FCP, LCP, CLS, INP)
+   ========================================================================== */
+
+/* 1. CLS Prevention: Reserve space and lock height constraints */
+.observatory-shell,
+.observatory-content,
+.mobile-bottom-nav {
+  contain: layout;
+}
+
+/* 2. INP Improvement: GPU-composited overlays to lower input delay */
+.chat-drawer,
+.search-overlay-container,
+.mobile-bottom-nav {
+  will-change: transform, opacity;
+}
+
+/* 3. Render Containment for 3D/2D Canvas blocks */
+canvas {
+  contain: layout style paint;
+}
+

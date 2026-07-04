@@ -1,4 +1,4 @@
-﻿# PERFORMANCE — Recall
+# PERFORMANCE — Recall
 
 | Field | Value |
 |-------|-------|
@@ -152,3 +152,47 @@ User experience if both cold:
     -> Total user-visible delay: ~15-25 s (still within acceptable range)
     -> Telegram does not time out webhook within 30 s
 ```
+
+---
+
+## Connection Pooling (psycopg3)
+
+To ensure high-throughput execution while respecting the connections limits of Neon serverless databases:
+* **Pool Size**: Configured at `min_size=0, max_size=5` per instance.
+* **Cold Start Timeout**: Set to `timeout=30.0` seconds to gracefully handle Neon serverless branch wakeups (which typically take 15-20 seconds).
+* **Idle Reclaim**: Idle connections are closed after `max_idle=240.0` seconds (4 minutes) to avoid silent link drops by Neon's router (which terminates inactive sockets at 5 minutes).
+
+---
+
+## 3D Mind Map Canvas (WebGL) Performance Gating
+
+To maintain the 60 FPS target on client devices during WebGL rendering of complex graphs, the frontend utilizes [useFPSMonitor.js](file:///d:/Recall/frontend/src/hooks/useFPSMonitor.js):
+* **Fidelity Downgrades**: If frame rates drop below **45 FPS** (`lowPerf = true`), the rendering pipeline dynamically:
+  * Disables antialiasing on the canvas: `gl={{ antialias: !lowPerf }}`.
+  * Hides mouse-following lighting and cursor flashlight passes.
+  * Reduces tag connection threads per node from 4 to 2.
+  * Diminishes particle density on the orbiting background field from 2,000 to 400.
+
+---
+
+## Reciprocal Rank Fusion (RRF) & Caching
+
+Recall combines semantic similarity and keyword relevance in a single database RRF compiler:
+* **Hybrid Search Query**: Unifies `direct_vector` HNSW search, `chunk_vector` child lookup, and GIN trigram `text_search` in a CTE, sorting by `1 / (rank + 60)`.
+* **Redis Graph Caching**: Mind map responses are serialized to `graph:{user_id}` and cached.
+* **Cache Invalidation Policy**: Whenever a user modifies, adds, uploads, or deletes an item/note, the backend executes `await redis.delete(f"graph:{user_id}")` to force a cached refresh.
+
+---
+
+## Ingest Deduplication & Cascading Triggers
+
+* **Deduplication (`idx_items_content_hash`)**: We compute SHA-256 hashes of incoming documents. A B-Tree index on `(user_id, content_hash)` prevents redundant model calculations by identifying duplicates instantly on ingestion.
+* **Cascading Triggers**: Since partitioned tables require composite primary keys `(id, created_at)`, simple foreign keys `ON DELETE CASCADE` cannot bind to the child `item_chunks` table. Instead, a custom PL/pgSQL trigger `trigger_cascade_delete_item_chunks` executes chunk removal atomically whenever an item is deleted.
+
+---
+
+## Rate Limiting & Timeout Guards
+
+* **Rate Limits**: Expensive API paths (such as `/api/pulse` or detailed profile calculations) are decorated with Upstash Redis rate-limiter dependencies to prevent API exhaustion.
+* **Timeout Enforcement**: All external LLM and transcription requests specify strict timeouts (e.g. `timeout=15.0` or `10.0` seconds) inside `ai_cascade.py` to prevent thread hangs during service degradation.
+

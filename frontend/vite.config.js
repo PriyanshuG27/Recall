@@ -19,7 +19,17 @@ export default defineConfig({
         icons: [
           {src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png'},
           {src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png'}
-        ]
+        ],
+        share_target: {
+          action: '/api/share-target',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url'
+          }
+        }
       },
       workbox: {
         runtimeCaching: [
@@ -41,6 +51,30 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    target: 'esnext',
+    minify: 'esbuild',
+    modulePreload: {
+      resolveDependencies(filename, deps, { hostId }) {
+        return deps.filter(dep => !dep.includes('vendor-three'));
+      }
+    },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+            return 'vendor-react';
+          }
+          if (id.includes('node_modules/three') || id.includes('node_modules/@react-three')) {
+            return 'vendor-three';
+          }
+          if (id.includes('node_modules/lucide-react') || id.includes('node_modules/canvas-confetti')) {
+            return 'vendor-utils';
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     host: true,

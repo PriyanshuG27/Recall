@@ -43,6 +43,7 @@ const ROOMS = [
     path: '/bridges',
     label: 'Bridges',
     subtitle: 'Minds, aligned',
+    hidden: true,
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="18" cy="18" r="3" />
@@ -197,7 +198,7 @@ export default function Sidebar({ currentRoom, onNavigate, onMuteChange, onSearc
 
       {/* ── Room navigation icons ── */}
       <nav className="sidebar-nav" role="navigation">
-        {ROOMS.map((room) => {
+        {ROOMS.filter((r) => !r.hidden).map((room) => {
           const isActive = currentRoom === room.id;
           const pull = iconOffsets[room.id] || 0;
           return (

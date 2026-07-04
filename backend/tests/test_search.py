@@ -297,7 +297,7 @@ async def test_embed_text_cascades():
             return mock_gemini_resp
             
         import sys
-        with mock.patch.dict(sys.modules, {"sentence_transformers": None}):
+        with mock.patch.dict(sys.modules, {"sentence_transformers": None, "fastembed": None}):
             # Reset cached local model to force try
             import backend.services.search_service as ss
             ss._local_model = None
@@ -323,7 +323,7 @@ async def test_embed_text_cascades():
         mock_module = mock.Mock()
         mock_module.SentenceTransformer = mock_transformer_cls
         
-        with mock.patch.dict(sys.modules, {"sentence_transformers": mock_module}):
+        with mock.patch.dict(sys.modules, {"sentence_transformers": mock_module, "fastembed": None}):
             # Reset cached local model to force initialization
             import backend.services.search_service as ss
             ss._local_model = None
@@ -333,6 +333,26 @@ async def test_embed_text_cascades():
             assert res == [0.8] * 384
             mock_transformer_cls.assert_called_once_with("all-MiniLM-L6-v2")
             mock_transformer_inst.encode.assert_called_once_with("hello")
+
+        # Scenario 2c: Modal starts with ak-mock, local FastEmbed is installed and succeeds
+        mock_embedding_cls = mock.Mock()
+        mock_embedding_inst = mock.Mock()
+        mock_embedding_inst.embed = mock.Mock(return_value=[[0.85] * 384])
+        mock_embedding_cls.return_value = mock_embedding_inst
+
+        mock_fastembed_module = mock.Mock()
+        mock_fastembed_module.TextEmbedding = mock_embedding_cls
+
+        with mock.patch.dict(sys.modules, {"fastembed": mock_fastembed_module, "sentence_transformers": None}):
+            # Reset cached local model to force initialization
+            import backend.services.search_service as ss
+            ss._local_model = None
+
+            res = await embed_text("hello")
+            assert len(res) == 384
+            assert res == [0.85] * 384
+            mock_embedding_cls.assert_called_once_with("BAAI/bge-small-en-v1.5")
+            mock_embedding_inst.embed.assert_called_once_with(["hello"])
 
             
         # Scenario 3: Modal is real but fails, goes to Gemini and Gemini returns 200
@@ -354,7 +374,7 @@ async def test_embed_text_cascades():
             resp.status_code = 404
             return resp
             
-        with mock.patch.dict(sys.modules, {"sentence_transformers": None}):
+        with mock.patch.dict(sys.modules, {"sentence_transformers": None, "fastembed": None}):
             # Reset cached local model
             import backend.services.search_service as ss
             ss._local_model = None
@@ -373,12 +393,13 @@ async def test_embed_text_cascades():
                 resp.text = "Failed"
                 return resp
                 
-            with mock.patch("httpx.AsyncClient.post", side_effect=mock_post_all_fail) as mock_post:
-                res = await embed_text("hello")
-                assert len(res) == 384
-                # Should be the mock vector
-                val = 1.0 / (384 ** 0.5)
-                assert res == [val] * 384
+            with mock.patch.dict(sys.modules, {"sentence_transformers": None, "fastembed": None}):
+                with mock.patch("httpx.AsyncClient.post", side_effect=mock_post_all_fail) as mock_post:
+                    res = await embed_text("hello")
+                    assert len(res) == 384
+                    # Should be the mock vector
+                    val = 1.0 / (384 ** 0.5)
+                    assert res == [val] * 384
 
             # Scenario 5: Modal mock, local fails, HF succeeds
             settings.MODAL_API_TOKEN = "ak-mock-token"
@@ -393,10 +414,11 @@ async def test_embed_text_cascades():
                     resp.status_code = 500
                 return resp
                 
-            with mock.patch("httpx.AsyncClient.post", side_effect=mock_post_hf_succeed) as mock_post:
-                res = await embed_text("hello")
-                assert len(res) == 384
-                assert res == [0.9] * 384
+            with mock.patch.dict(sys.modules, {"sentence_transformers": None, "fastembed": None}):
+                with mock.patch("httpx.AsyncClient.post", side_effect=mock_post_hf_succeed) as mock_post:
+                    res = await embed_text("hello")
+                    assert len(res) == 384
+                    assert res == [0.9] * 384
 
             
     finally:

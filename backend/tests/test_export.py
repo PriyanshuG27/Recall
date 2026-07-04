@@ -146,7 +146,7 @@ def test_export_success(client, mock_db_connection, caplog):
     ]
 
     with caplog.at_level(logging.INFO), \
-         mock.patch("backend.routes.api.rate_limit", return_value=lambda: None):
+         mock.patch("backend.services.rate_limiter.check_rate_limit", new_callable=mock.AsyncMock, return_value=True):
         resp = client.get("/api/export", cookies={"recall_session": token})
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "application/json"

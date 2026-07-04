@@ -112,8 +112,28 @@ export default function MapCanvas({
       s.current.transform = { x: tx, y: ty, k };
     };
 
+    const handleFocusNode = (e) => {
+      const nodeId = e.detail?.nodeId;
+      const sn = s.current.simNodes || [];
+      const node = sn.find(n => n.id != null && String(n.id) === String(nodeId));
+      if (node && node.x != null && node.y != null) {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const W = canvas.offsetWidth || window.innerWidth;
+        const H = canvas.offsetHeight || window.innerHeight;
+        const k = 1.35;
+        const tx = W / 2 - k * node.x;
+        const ty = H / 2 - k * node.y;
+        s.current.transform = { x: tx, y: ty, k };
+      }
+    };
+
     window.addEventListener('map-autofit', handleAutoFit);
-    return () => window.removeEventListener('map-autofit', handleAutoFit);
+    window.addEventListener('map-canvas-focus', handleFocusNode);
+    return () => {
+      window.removeEventListener('map-autofit', handleAutoFit);
+      window.removeEventListener('map-canvas-focus', handleFocusNode);
+    };
   }, []);
 
   /* ── Simulation: pre-settle 140 ticks then go live ─────────────────── */
@@ -302,18 +322,32 @@ export default function MapCanvas({
 
       if (hub != null) {
         litNodes.add(hub);
+        litNodes.add(String(hub));
         sl.forEach(link => {
           const sid = typeof link.source === 'object' ? link.source.id : link.source;
           const tid = typeof link.target === 'object' ? link.target.id : link.target;
-          if (sid === hub || tid === hub) { litEdges.add(link); litNodes.add(sid); litNodes.add(tid); }
+          if (String(sid) === String(hub) || String(tid) === String(hub)) {
+            litEdges.add(link);
+            litNodes.add(sid);
+            litNodes.add(String(sid));
+            litNodes.add(tid);
+            litNodes.add(String(tid));
+          }
         });
       }
       if (sel != null) {
         litNodes.add(sel);
+        litNodes.add(String(sel));
         sl.forEach(link => {
           const sid = typeof link.source === 'object' ? link.source.id : link.source;
           const tid = typeof link.target === 'object' ? link.target.id : link.target;
-          if (sid === sel || tid === sel) { litEdges.add(link); litNodes.add(sid); litNodes.add(tid); }
+          if (String(sid) === String(sel) || String(tid) === String(sel)) {
+            litEdges.add(link);
+            litNodes.add(sid);
+            litNodes.add(String(sid));
+            litNodes.add(tid);
+            litNodes.add(String(tid));
+          }
         });
       }
 
@@ -404,6 +438,19 @@ export default function MapCanvas({
           ctx.lineWidth   = 0.5 / k;
         }
         ctx.stroke();
+
+        // Draw flowing light particle along visible connection edges
+        if (alpha > 0.08) {
+          const speed = 0.15 * (1 + (link.weight || 0.5) * 1.5);
+          const tFlow = (now * speed + Math.abs((src.id || 0) + (tgt.id || 0)) * 0.25) % 1.0;
+          const px = src.x + (tgt.x - src.x) * tFlow;
+          const py = src.y + (tgt.y - src.y) * tFlow;
+          
+          ctx.beginPath();
+          ctx.arc(px, py, 1.8 / k, 0, Math.PI * 2);
+          ctx.fillStyle = hubN ? ha(nodeColor(hubN), alpha * 0.9) : `rgba(207, 163, 101, ${alpha * 0.75})`;
+          ctx.fill();
+        }
       });
 
       // Render active candidate connections (Drift Windows and Near-Misses)
@@ -475,10 +522,10 @@ export default function MapCanvas({
       sn.forEach(node => {
         if (node.x == null) return;
         const hubNode  = isHub(node);
-        const isSel    = node.id === sel;
-        const isHubSel = node.id === hub;
-        const isHov    = node.id === hov;
-        const isLit    = litNodes.has(node.id);
+        const isSel    = sel != null && String(node.id) === String(sel);
+        const isHubSel = hub != null && String(node.id) === String(hub);
+        const isHov    = hov != null && String(node.id) === String(hov);
+        const isLit    = litNodes.has(node.id) || litNodes.has(String(node.id));
 
         // Level-of-Detail (LOD): Zoomed out hides non-hub stars
         if (k < 0.8 && !hubNode && !isSel && !isHov && !isLit) {
@@ -647,6 +694,24 @@ export default function MapCanvas({
             }
           }
 
+          // Active orbiting particles for "hot" nodes (decaying/warning review state, freshly saved, or focused)
+          const isHotNode = (interval && interval <= 2) || isSel || isHov;
+          if (isHotNode) {
+            const particleCount = isSel ? 3 : 2;
+            const orbitRadius = drawR * (isSel ? 2.2 : 1.7);
+            const baseSpeed = isSel ? 2.5 : (interval && interval <= 1 ? 2.2 : 1.2);
+            for (let pIdx = 0; pIdx < particleCount; pIdx++) {
+              const angle = (now * baseSpeed) + (pIdx * Math.PI * 2 / particleCount) + (Math.abs(node.id || 0) * 0.5);
+              const ox = node.x + Math.cos(angle) * orbitRadius;
+              const oy = node.y + Math.sin(angle) * orbitRadius;
+              const pAlpha = 0.4 + 0.3 * Math.sin(now * 4.0 + pIdx);
+              ctx.beginPath();
+              ctx.arc(ox, oy, 1.8 / k, 0, Math.PI * 2);
+              ctx.fillStyle = isSel ? `rgba(244, 239, 235, ${pAlpha})` : (interval && interval <= 2 ? `rgba(230, 126, 34, ${pAlpha})` : ha(col, pAlpha));
+              ctx.fill();
+            }
+          }
+
           if (isSel || isHov || isLit || (query && inSearch)) {
             const glow = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, drawR * 3.5);
             glow.addColorStop(0, ha(col, (isSel || (query && inSearch)) ? 0.65 : 0.28));
@@ -668,7 +733,7 @@ export default function MapCanvas({
           ctx.fillStyle = isSel ? '#F4EFEB' : col;
           ctx.fill();
 
-          if (node.id === flareId) {
+          if (flareId != null && String(node.id) === String(flareId)) {
             const flarePulse = 0.5 + 0.5 * Math.sin(now * 3.5);
             const flareR = drawR + 4 + flarePulse * 18;
             ctx.beginPath();

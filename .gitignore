@@ -211,3 +211,21 @@ fastapi_guide.pdf
 # Local test data and helper generation scripts
 test_data/
 scripts/
+
+# Private Backups & Decrypted Datasets — NEVER COMMIT
+Recall Backup.md
+Recall Decrypted.md
+*.zip
+*.mp4
+
+# Benchmark & Audit Reports
+k6_*_results.json
+frontend/lh-*.json
+test-results/
+playwright-report/
+
+# Temporary Text Dumps & Extracted Files
+Advanced_Async_Programming_in_Python_*.md
+Image__This_image_is_a_screenshot_of_a_LinkedIn_po_*.md
+docs_summary.txt
+

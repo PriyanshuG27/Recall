@@ -99,8 +99,9 @@ const SLOTS = [
   // Footprint: side walls x=±2.60, front/back z=±2.30
   // GF: h=1.20, center y=0.60, top=1.20 | Slab: h=0.12, center y=1.26
   // 2F: h=1.10, bottom=1.32, center y=1.87, top=2.42
-  { id:42, comp:'modern_wall', si:4, pos:[-2.60,0.60, 0.00], sz:[0.24,1.20,4.60], sc:90, hasWindow:true },
-  { id:43, comp:'modern_wall', si:4, pos:[ 2.60,0.60, 0.00], sz:[0.24,1.20,4.60], sc:91, hasWindow:true },
+  { id:42, comp:'modern_wall',    si:4, pos:[-2.60,0.60, 0.00], sz:[0.24,1.20,4.60], sc:90, hasWindow:true },
+  { id:43, comp:'modern_wall',    si:4, pos:[ 2.60,0.60, 0.00], sz:[0.24,1.20,4.60], sc:91, hasWindow:true },
+  { id:51, comp:'villa_grounds',  si:4, pos:[0,0.01,0],          sz:[0.01,0.01,0.01], sc:91 },
   { id:44, comp:'modern_wall', si:4, pos:[ 0.00,0.60,-2.30], sz:[4.96,1.20,0.24], sc:92 },
   { id:45, comp:'modern_wall', si:4, pos:[ 0.00,0.60, 2.30], sz:[4.96,1.20,0.24], sc:93, hasDoor:true },
   { id:46, comp:'modern_slab', si:4, pos:[ 0.00,1.26, 0.00], sz:[5.44,0.12,4.88], sc:94 },
@@ -866,8 +867,8 @@ function ManorWallVisual({ slot }) {
           <boxGeometry args={[longDim+0.04, 0.072, 0.038]} />
           <meshStandardMaterial color={STONE} roughness={0.80}/>
         </mesh>
-        {/* 3 walnut horizontal cladding bands */}
-        {[-0.24, 0.02, 0.26].map((rel,i)=>(
+        {/* 3 walnut horizontal cladding bands — only on decorated (windowed / door) faces */}
+        {(slot.hasWindow || slot.hasDoor) && [-0.24, 0.02, 0.26].map((rel,i)=>(
           <mesh key={i} position={[0, rel*H, 0]}>
             <boxGeometry args={[longDim+0.02, H*0.085, 0.024]} />
             <meshStandardMaterial color={WALNUT} roughness={0.76}/>
@@ -883,31 +884,31 @@ function ManorWallVisual({ slot }) {
         {/* Grand entrance — double door + flanking windows + portico surround */}
         {slot.hasDoor && (
           <group position={[0, -H*0.04, 0]}>
-            {/* Dark wood double door fill */}
-            <mesh position={[0,-DOOR_H*0.04,0.012]}>
-              <planeGeometry args={[DOOR_W, DOOR_H*0.88]} />
+            {/* Dark wood door body — solid box to avoid plane z-fight */}
+            <mesh position={[0,-DOOR_H*0.04,0.018]}>
+              <boxGeometry args={[DOOR_W, DOOR_H*0.86, 0.020]} />
               <meshStandardMaterial color={DOOR_C} roughness={0.84}/>
             </mesh>
             {/* Centre divider */}
-            <mesh position={[0,-DOOR_H*0.04,0.026]}>
-              <boxGeometry args={[0.016,DOOR_H*0.86,0.024]} />
+            <mesh position={[0,-DOOR_H*0.04,0.040]}>
+              <boxGeometry args={[0.016,DOOR_H*0.84,0.026]} />
               <meshStandardMaterial color="#0E0806" roughness={0.90}/>
             </mesh>
             {/* Raised panels */}
             {[-DOOR_W*0.25, DOOR_W*0.25].map((px,i)=>(
               <React.Fragment key={i}>
-                <mesh position={[px, DOOR_H*0.12, 0.026]}>
-                  <boxGeometry args={[DOOR_W*0.38,DOOR_H*0.28,0.012]} />
+                <mesh position={[px, DOOR_H*0.12, 0.044]}>
+                  <boxGeometry args={[DOOR_W*0.38,DOOR_H*0.28,0.014]} />
                   <meshStandardMaterial color="#100804" roughness={0.88}/>
                 </mesh>
-                <mesh position={[px,-DOOR_H*0.18,0.026]}>
-                  <boxGeometry args={[DOOR_W*0.38,DOOR_H*0.22,0.012]} />
+                <mesh position={[px,-DOOR_H*0.18,0.044]}>
+                  <boxGeometry args={[DOOR_W*0.38,DOOR_H*0.22,0.014]} />
                   <meshStandardMaterial color="#100804" roughness={0.88}/>
                 </mesh>
               </React.Fragment>
             ))}
-            {/* Transom / fanlight */}
-            <mesh position={[0,DOOR_H*0.50,0.016]}>
+            {/* Transom / fanlight — raised above door body */}
+            <mesh position={[0,DOOR_H*0.50,0.048]}>
               <planeGeometry args={[DOOR_W*0.86,DOOR_H*0.16]} />
               <meshStandardMaterial color="#FFE8A8" emissive="#FFD060" emissiveIntensity={2.4} transparent opacity={0.90} roughness={0.10}/>
             </mesh>
@@ -925,7 +926,7 @@ function ManorWallVisual({ slot }) {
             </mesh>
             {/* Brass handles */}
             {[-DOOR_W*0.12, DOOR_W*0.12].map((hx,i)=>(
-              <mesh key={i} position={[hx,-DOOR_H*0.02,0.038]}>
+              <mesh key={i} position={[hx,-DOOR_H*0.02,0.048]}>
                 <sphereGeometry args={[0.018,8,8]} />
                 <meshStandardMaterial color="#C89030" metalness={0.90} roughness={0.18} emissive="#FFD060" emissiveIntensity={0.5}/>
               </mesh>
@@ -1043,14 +1044,19 @@ function ManorPorchVisual({ slot }) {
   );
 }
 
-/* 2nd-floor balcony — stone slab + walnut railing posts + top rail */
+/* 2nd-floor balcony — stone slab + walnut railing posts + top rail (all 3 open sides) */
 function ManorBalconyVisual({ slot }) {
   const [W,H,D] = slot.sz; // 3.40, 0.08, 1.00
   const WALNUT = '#7A4828', STONE = '#C8BC98';
-  const N = Math.max(2, Math.round(W/0.28));
+  const N  = Math.max(2, Math.round(W/0.28));
   const SP = W/(N-1);
+  // side posts: 3 posts along depth (excluding front corner already covered)
+  const NS = Math.max(2, Math.round((D-0.12)/0.32));
+  const SS = (D-0.18)/(NS-1);
+  const sideZ = (i) => -D/2+0.09 + i*SS;
   return (
     <>
+      {/* Slab */}
       <mesh castShadow receiveShadow>
         <boxGeometry args={[W,H,D]} />
         <meshStandardMaterial color={STONE} roughness={0.85}/>
@@ -1060,24 +1066,44 @@ function ManorBalconyVisual({ slot }) {
         <boxGeometry args={[W+0.04,0.024,0.082]} />
         <meshStandardMaterial color={WALNUT} roughness={0.78}/>
       </mesh>
-      {/* Railing posts */}
+      {/* ── FRONT RAIL ── */}
       {Array.from({length:N},(_,i)=>(
         <mesh key={i} position={[-W/2+i*SP, H/2+0.22, D/2-0.062]} castShadow>
           <boxGeometry args={[0.022,0.44,0.022]} />
           <meshStandardMaterial color={WALNUT} roughness={0.76}/>
         </mesh>
       ))}
-      {/* Top rail */}
       <mesh position={[0,H/2+0.44,D/2-0.062]} castShadow>
         <boxGeometry args={[W+0.02,0.032,0.038]} />
         <meshStandardMaterial color={WALNUT} roughness={0.74}/>
       </mesh>
-      {/* Bottom rail */}
       <mesh position={[0,H/2+0.04,D/2-0.062]}>
         <boxGeometry args={[W+0.02,0.022,0.030]} />
         <meshStandardMaterial color={WALNUT} roughness={0.78}/>
       </mesh>
-      {/* Corner posts (taller) */}
+      {/* ── SIDE RAILS (left & right) ── */}
+      {[-W/2, W/2].map((px,si)=>(
+        <group key={`sr${si}`}>
+          {/* Side posts */}
+          {Array.from({length:NS},(_,i)=>(
+            <mesh key={i} position={[px, H/2+0.22, sideZ(i)]} castShadow>
+              <boxGeometry args={[0.022,0.44,0.022]} />
+              <meshStandardMaterial color={WALNUT} roughness={0.76}/>
+            </mesh>
+          ))}
+          {/* Side top rail */}
+          <mesh position={[px, H/2+0.44, (-D/2+0.09+D/2-0.09)/2]} castShadow>
+            <boxGeometry args={[0.038,0.032,D-0.18]} />
+            <meshStandardMaterial color={WALNUT} roughness={0.74}/>
+          </mesh>
+          {/* Side bottom rail */}
+          <mesh position={[px, H/2+0.04, (-D/2+0.09+D/2-0.09)/2]}>
+            <boxGeometry args={[0.030,0.022,D-0.18]} />
+            <meshStandardMaterial color={WALNUT} roughness={0.78}/>
+          </mesh>
+        </group>
+      ))}
+      {/* Corner posts (taller, join front + side) */}
       {[-W/2,W/2].map((px,i)=>(
         <mesh key={i} position={[px,H/2+0.28,D/2-0.062]} castShadow>
           <boxGeometry args={[0.038,0.56,0.038]} />
@@ -1136,8 +1162,8 @@ function ModernWallVisual({ slot }) {
   const CONC  = '#ECEAE4';  // off-white concrete
   const BASE  = '#DDDBD5';  // slightly darker base strip
   const DARK  = '#1E1E1E';  // charcoal frames
-  const GLASS = '#1A2E3C';  // dark tinted glass
-  const GLOW  = '#FFB070';  // warm amber interior
+  const GLASS = '#1E3A5C';  // blue-tinted glass
+  const GLOW  = '#D8F0FF';  // cool daylight white
   const WOOD  = '#8B5E3C';  // timber accent
 
   const wallGeo = useMemo(() => {
@@ -1179,8 +1205,8 @@ function ModernWallVisual({ slot }) {
           <group position={[0,H*0.04,0]}>
             <mesh position={[0,0,0.014]}>
               <planeGeometry args={[WIN_W,WIN_H]}/>
-              <meshStandardMaterial color={GLASS} emissive={GLOW} emissiveIntensity={0.28}
-                roughness={0.04} metalness={0.62} transparent opacity={0.90}/>
+              <meshStandardMaterial color={GLASS} emissive={GLOW} emissiveIntensity={0.06}
+                roughness={0.06} metalness={0.68} transparent opacity={0.88}/>
             </mesh>
             {/* Frame top/bottom */}
             {[[0,WIN_H/2+FW/2],[0,-(WIN_H/2+FW/2)]].map(([fx,fy],i)=>(
@@ -1275,6 +1301,231 @@ function ModernSlabVisual({ slot }) {
   );
 }
 
+/* ═══ VILLA GROUNDS — pool, car, loungers, palms, planters ═══════════════════════════════ */
+
+function PalmTree({ px, pz }) {
+  const h = 1.80 + ((Math.abs(px*1.3+pz*0.7)%1.0))*0.50;
+  const TRUNK = '#8B6914', LEAF = '#2A7A3A', LEAF2 = '#1E5E2A';
+  return (
+    <group position={[px, 0, pz]}>
+      <mesh position={[0,h/2,0]} castShadow>
+        <cylinderGeometry args={[0.055,0.085,h,7]}/>
+        <meshStandardMaterial color={TRUNK} roughness={0.88}/>
+      </mesh>
+      {/* Fronds */}
+      {[0,52,104,156,208,260,312].map((deg,i)=>{
+        const rad=deg*Math.PI/180;
+        return (
+          <mesh key={i}
+            position={[Math.cos(rad)*0.22, h+0.05, Math.sin(rad)*0.22]}
+            rotation={[0.38+i*0.03, rad, 0.18]}>
+            <boxGeometry args={[0.065,0.030,0.90]}/>
+            <meshStandardMaterial color={i%2===0?LEAF:LEAF2} roughness={0.72}/>
+          </mesh>
+        );
+      })}
+      {/* Crown bush */}
+      <mesh position={[0,h+0.10,0]}>
+        <sphereGeometry args={[0.22,6,5]}/>
+        <meshStandardMaterial color={LEAF} roughness={0.82}/>
+      </mesh>
+    </group>
+  );
+}
+
+function VillaGroundsVisual() {
+  const DECK  = '#C8C6BA'; // limestone deck
+  const POOL  = '#0EA8D0'; // pool water
+  const POOL_E= '#00E8FF';
+  const DRIV  = '#B8B6B0'; // driveway concrete
+  const EDGE  = '#A0A090';
+  const CAR   = '#1C1C2A'; // dark luxury car
+  const CARG  = '#1E3A58'; // car glass
+  const LOUNGE= '#E0D8CC'; // lounger frame
+  const CUSH  = '#F4EDE0'; // cushion
+  const PLNT  = '#B8B49E'; // planter stone
+  const FLWR_R= '#E03030';
+  const FLWR_W= '#F0F0E8';
+  const GRN   = '#2A7A3A';
+
+  return (
+    <group>
+      {/* ─── POOL DECK ─── to the left of villa (villa x=-2.72 outer) */}
+      <mesh position={[-6.0,0.015,0]} receiveShadow>
+        <boxGeometry args={[5.20,0.030,4.40]}/>
+        <meshStandardMaterial color={DECK} roughness={0.90}/>
+      </mesh>
+      {/* Pool shell */}
+      <mesh position={[-6.0,0.34,0]}>
+        <boxGeometry args={[3.40,0.70,2.80]}/>
+        <meshStandardMaterial color={'#A8C4D0'} roughness={0.82}/>
+      </mesh>
+      {/* Pool water */}
+      <mesh position={[-6.0,0.54,0]}>
+        <boxGeometry args={[3.20,0.14,2.60]}/>
+        <meshStandardMaterial color={POOL} emissive={POOL_E} emissiveIntensity={0.22}
+          roughness={0.04} metalness={0.28} transparent opacity={0.88}/>
+      </mesh>
+      {/* Pool rim (light stone cap) */}
+      {[
+        [0, 0.72, 1.40+0.05],
+        [0, 0.72,-(1.40+0.05)],
+        [-(1.70+0.05), 0.72, 0],
+        [ (1.70+0.05), 0.72, 0],
+      ].map(([rx,ry,rz],i)=>(
+        <mesh key={i} position={[-6.0+rx, ry, rz]}>
+          <boxGeometry args={[i<2?3.60:0.12, 0.08, i<2?0.12:2.92]}/>
+          <meshStandardMaterial color={DECK} roughness={0.88}/>
+        </mesh>
+      ))}
+      {/* Pool glow light */}
+      <pointLight position={[-6.0,0.56,0]} color="#00CFFF" intensity={2.0} distance={5.0} decay={2}/>
+
+      {/* ─── POOL LOUNGERS ─── */}
+      {[-0.90, 0.90].map((oz,li)=>(
+        <group key={li} position={[-6.0, 0.06, oz]}>
+          <mesh position={[2.50,0.12,0]} rotation={[0,0,0]} castShadow>
+            <boxGeometry args={[0.48,0.055,1.62]}/>
+            <meshStandardMaterial color={LOUNGE} roughness={0.68} metalness={0.22}/>
+          </mesh>
+          <mesh position={[2.50,0.18,0]}>
+            <boxGeometry args={[0.42,0.048,1.54]}/>
+            <meshStandardMaterial color={CUSH} roughness={0.92}/>
+          </mesh>
+          {[[-0.18,-0.72],[-0.18,0.72],[0.18,-0.72],[0.18,0.72]].map(([lx,lz],i)=>(
+            <mesh key={i} position={[2.50+lx,0.055,lz]}>
+              <boxGeometry args={[0.035,0.11,0.035]}/>
+              <meshStandardMaterial color={LOUNGE} roughness={0.60} metalness={0.30}/>
+            </mesh>
+          ))}
+          {/* Side table */}
+          <mesh position={[3.18,0.16,0]}>
+            <cylinderGeometry args={[0.14,0.14,0.04,8]}/>
+            <meshStandardMaterial color={DECK} roughness={0.88}/>
+          </mesh>
+          <mesh position={[3.18,0.05,0]}>
+            <cylinderGeometry args={[0.022,0.022,0.10,6]}/>
+            <meshStandardMaterial color={LOUNGE} roughness={0.60} metalness={0.30}/>
+          </mesh>
+        </group>
+      ))}
+
+      {/* ─── PALM TREES ─── */}
+      <PalmTree px={-4.0}  pz={ 2.6}/>
+      <PalmTree px={-4.0}  pz={-2.6}/>
+      <PalmTree px={-8.2}  pz={ 1.8}/>
+      <PalmTree px={-8.0}  pz={-1.6}/>
+      <PalmTree px={ 4.0}  pz={ 3.2}/>
+      <PalmTree px={-3.5}  pz={-3.4}/>
+
+      {/* ─── DRIVEWAY (right-front) ─── */}
+      <mesh position={[1.80,0.01,5.10]} receiveShadow>
+        <boxGeometry args={[3.60,0.020,3.20]}/>
+        <meshStandardMaterial color={DRIV} roughness={0.90}/>
+      </mesh>
+      {/* Driveway lane markings */}
+      {[-1.50,1.50].map((x,i)=>(
+        <mesh key={i} position={[1.80+x,0.018,5.10]}>
+          <boxGeometry args={[0.050,0.022,3.20]}/>
+          <meshStandardMaterial color={EDGE} roughness={0.90}/>
+        </mesh>
+      ))}
+
+      {/* ─── PARKED CAR ─── — sleek dark sedan */}
+      <group position={[1.80,0.255,5.20]}>
+        {/* Lower body */}
+        <mesh castShadow>
+          <boxGeometry args={[2.10,0.30,0.96]}/>
+          <meshStandardMaterial color={CAR} roughness={0.14} metalness={0.88}/>
+        </mesh>
+        {/* Upper cabin */}
+        <mesh position={[0,0.25,0]} castShadow>
+          <boxGeometry args={[1.40,0.24,0.88]}/>
+          <meshStandardMaterial color={CAR} roughness={0.14} metalness={0.88}/>
+        </mesh>
+        {/* Windshields */}
+        {[[0.54,0.25,0],[-0.54,0.25,0]].map(([gx,gy,gz],i)=>(
+          <mesh key={i} position={[gx,gy,gz]}>
+            <boxGeometry args={[0.040,0.22,0.82]}/>
+            <meshStandardMaterial color={CARG} roughness={0.04} metalness={0.60} transparent opacity={0.72}/>
+          </mesh>
+        ))}
+        {/* Side windows */}
+        {[0.45,-0.45].map((z,i)=>(
+          <mesh key={i} position={[0,0.25,z]}>
+            <boxGeometry args={[1.30,0.18,0.038]}/>
+            <meshStandardMaterial color={CARG} roughness={0.04} metalness={0.60} transparent opacity={0.72}/>
+          </mesh>
+        ))}
+        {/* Wheels ×4 */}
+        {[[-0.76,-0.14,-0.49],[0.76,-0.14,-0.49],[-0.76,-0.14,0.49],[0.76,-0.14,0.49]].map(([wx,wy,wz],i)=>(
+          <group key={i}>
+            <mesh position={[wx,wy,wz]} rotation={[Math.PI/2,0,0]} castShadow>
+              <cylinderGeometry args={[0.215,0.215,0.15,14]}/>
+              <meshStandardMaterial color="#1A1A1A" roughness={0.92}/>
+            </mesh>
+            <mesh position={[wx,wy,wz+(wz>0?0.076:-0.076)]} rotation={[Math.PI/2,0,0]}>
+              <cylinderGeometry args={[0.10,0.10,0.020,8]}/>
+              <meshStandardMaterial color="#C8C8C8" metalness={0.92} roughness={0.08}/>
+            </mesh>
+          </group>
+        ))}
+        {/* Headlights */}
+        {[[1.06,0,-0.34],[1.06,0,0.34]].map(([hx,hy,hz],i)=>(
+          <mesh key={i} position={[hx,hy,hz]}>
+            <boxGeometry args={[0.038,0.10,0.22]}/>
+            <meshStandardMaterial color="#FFFFFF" emissive="#FFFFFF" emissiveIntensity={0.80}/>
+          </mesh>
+        ))}
+        {/* Taillights */}
+        {[[-1.06,0,-0.36],[-1.06,0,0.36]].map(([hx,hy,hz],i)=>(
+          <mesh key={i} position={[hx,hy,hz]}>
+            <boxGeometry args={[0.030,0.08,0.18]}/>
+            <meshStandardMaterial color="#FF2020" emissive="#FF0000" emissiveIntensity={0.60}/>
+          </mesh>
+        ))}
+        {/* Number plate */}
+        <mesh position={[1.07,0,0]}>
+          <boxGeometry args={[0.030,0.08,0.40]}/>
+          <meshStandardMaterial color="#FFFFF8" roughness={0.90}/>
+        </mesh>
+      </group>
+
+      {/* ─── FLOWER PLANTERS along villa front ─── */}
+      {[[-2.00,2.92],[-0.70,2.92],[0.70,2.92],[2.00,2.92]].map(([px,pz],i)=>(
+        <group key={i} position={[px,0,pz]}>
+          <mesh position={[0,0.14,0]} castShadow>
+            <boxGeometry args={[0.38,0.28,0.38]}/>
+            <meshStandardMaterial color={PLNT} roughness={0.88}/>
+          </mesh>
+          {[[0,0.36,0],[0.09,0.38,0.09],[-0.08,0.36,-0.07]].map(([fx,fy,fz],fi)=>(
+            <mesh key={fi} position={[fx,fy,fz]}>
+              <sphereGeometry args={[0.075,6,5]}/>
+              <meshStandardMaterial color={fi===0?(i%2===0?FLWR_R:FLWR_W):GRN}
+                roughness={0.80} emissive={fi===0?(i%2===0?FLWR_R:FLWR_W):'#000000'}
+                emissiveIntensity={fi===0?0.12:0}/>
+            </mesh>
+          ))}
+          <mesh position={[0,0.28,0]}>
+            <boxGeometry args={[0.018,0.14,0.018]}/>
+            <meshStandardMaterial color={GRN} roughness={0.85}/>
+          </mesh>
+        </group>
+      ))}
+
+      {/* ─── LOW PERIMETER WALL (right side of villa) ─── */}
+      <mesh position={[3.80,0.20,0.50]} castShadow>
+        <boxGeometry args={[0.18,0.40,4.60]}/>
+        <meshStandardMaterial color={DECK} roughness={0.88}/>
+      </mesh>
+      <mesh position={[3.80,0.42,0.50]}>
+        <boxGeometry args={[0.22,0.040,4.64]}/>
+        <meshStandardMaterial color='#A8A49C' roughness={0.80}/>
+      </mesh>
+    </group>
+  );
+}
+
 /* Dispatcher — picks the right visual for each block */
 function BlockMesh({ slot, state }) {
   const goldMatRef = useRef();
@@ -1295,6 +1546,7 @@ function BlockMesh({ slot, state }) {
       case 'manor_parapet': return ManorParapetVisual;
       case 'modern_wall':   return ModernWallVisual;
       case 'modern_slab':   return ModernSlabVisual;
+      case 'villa_grounds': return VillaGroundsVisual;
       default:              return StoneVisual;
     }
   }, [slot.comp]);
@@ -1612,70 +1864,55 @@ function VillaRoof({ show, ghost }) {
   );
 }
 
-/* Mansard roof for Manor — four slope panels + flat top + front dormer */
+/* Mansard roof for Manor — single solid Cylinder frustum to prevent z-fighting + flat top cap + dormer */
 function ManorRoof({ show, ghost }) {
   if (!show) return null;
   const op = ghost ? 0.08 : 1.0;
   const tr = !!ghost;
-  // Outer overhang: ±2.34 x ±2.20. Inner flat-top: ±1.58 x ±1.50. Rise: 0.44
-  const OX=2.34, OZ=2.20, IX=1.58, IZ=1.50, RISE=0.44;
-  const runX=OX-IX, runZ=OZ-IZ; // 0.76, 0.70
-  const lenX=Math.sqrt(runX*runX+RISE*RISE); // ≈0.877
-  const lenZ=Math.sqrt(runZ*runZ+RISE*RISE); // ≈0.822
-  const angX=Math.atan2(RISE,runX); // ≈30°
-  const angZ=Math.atan2(RISE,runZ); // ≈32°
-  const C='#2A2018', TRIM='#7A5E38', FLAT='#322A1C', CREAM='#D8CC9E';
+
+  const RISE = 0.44;
+  const IX = 1.58; // flat top half-width
+  const OX = 2.34; // base half-width
+
+  // Cylinder math for 4-segment square frustum
+  // Radius is corner distance = face_distance / cos(45) = face_distance * sqrt(2)
+  const radTop = IX * Math.SQRT2; // ≈ 2.234
+  const radBot = OX * Math.SQRT2; // ≈ 3.309
+
+  const C='#2D241E', TRIM='#6A4E38', FLAT='#221A14', CREAM='#D8CC9E';
+
   return (
-    <group position={[0,2.54,0]}>
-      {/* Front slope (+Z) */}
-      <mesh position={[0,RISE/2,IZ+runZ/2]} rotation={[-angZ,0,0]} castShadow={!ghost}>
-        <boxGeometry args={[OX*2+0.18,0.060,lenZ]} />
+    <group position={[0,2.96,0]}>
+      {/* Mansard roof body (frustum) */}
+      <mesh rotation={[0, Math.PI/4, 0]} position={[0, RISE/2, 0]} castShadow={!ghost}>
+        <cylinderGeometry args={[radTop, radBot, RISE, 4, 1, false]} />
         <meshStandardMaterial color={C} roughness={0.88} metalness={0.04} transparent={tr} opacity={op} depthWrite={!ghost}/>
       </mesh>
-      {/* Back slope (-Z) */}
-      <mesh position={[0,RISE/2,-(IZ+runZ/2)]} rotation={[angZ,0,0]} castShadow={!ghost}>
-        <boxGeometry args={[OX*2+0.18,0.060,lenZ]} />
-        <meshStandardMaterial color={C} roughness={0.88} metalness={0.04} transparent={tr} opacity={op} depthWrite={!ghost}/>
+
+      {/* Flat top lead flashing overlay */}
+      <mesh position={[0, RISE + 0.005, 0]} castShadow={!ghost}>
+        <boxGeometry args={[IX*2, 0.01, IX*2]} />
+        <meshStandardMaterial color={FLAT} roughness={0.90} metalness={0.05} transparent={tr} opacity={op} depthWrite={!ghost}/>
       </mesh>
-      {/* Left slope (-X) */}
-      <mesh position={[-(IX+runX/2),RISE/2,0]} rotation={[0,0,angX]} castShadow={!ghost}>
-        <boxGeometry args={[lenX,0.060,OZ*2+0.18]} />
-        <meshStandardMaterial color={C} roughness={0.88} metalness={0.04} transparent={tr} opacity={op} depthWrite={!ghost}/>
-      </mesh>
-      {/* Right slope (+X) */}
-      <mesh position={[IX+runX/2,RISE/2,0]} rotation={[0,0,-angX]} castShadow={!ghost}>
-        <boxGeometry args={[lenX,0.060,OZ*2+0.18]} />
-        <meshStandardMaterial color={C} roughness={0.88} metalness={0.04} transparent={tr} opacity={op} depthWrite={!ghost}/>
-      </mesh>
-      {/* Flat top */}
-      <mesh position={[0,RISE+0.030,0]} castShadow={!ghost}>
-        <boxGeometry args={[IX*2+0.06,0.060,IZ*2+0.06]} />
-        <meshStandardMaterial color={FLAT} roughness={0.90} metalness={0.03} transparent={tr} opacity={op} depthWrite={!ghost}/>
-      </mesh>
-      {/* Eave trim — front/back */}
-      {[-OZ,OZ].map((z,i)=>(
-        <mesh key={`et${i}`} position={[0,-0.038,z]} castShadow={!ghost}>
-          <boxGeometry args={[OX*2+0.22,0.090,0.062]} />
+
+      {/* Eave trim — front/back (thickened and lowered to cover wall gap) */}
+      {[-OX,OX].map((z,i)=>(
+        <mesh key={`et${i}`} position={[0,-0.12,z]} castShadow={!ghost}>
+          <boxGeometry args={[OX*2+0.22,0.24,0.062]} />
           <meshStandardMaterial color={TRIM} roughness={0.76} transparent={tr} opacity={op} depthWrite={!ghost}/>
         </mesh>
       ))}
-      {/* Eave trim — left/right */}
+      {/* Eave trim — left/right (thickened and lowered to cover wall gap) */}
       {[-OX,OX].map((x,i)=>(
-        <mesh key={`es${i}`} position={[x,-0.038,0]} castShadow={!ghost}>
-          <boxGeometry args={[0.062,0.090,OZ*2+0.22]} />
+        <mesh key={`es${i}`} position={[x,-0.12,0]} castShadow={!ghost}>
+          <boxGeometry args={[0.062,0.24,OX*2+0.22]} />
           <meshStandardMaterial color={TRIM} roughness={0.76} transparent={tr} opacity={op} depthWrite={!ghost}/>
         </mesh>
       ))}
-      {/* Flat-top corner finials */}
-      {[[-IX,IZ],[IX,IZ],[-IX,-IZ],[IX,-IZ]].map(([px,pz],i)=>(
-        <mesh key={`pp${i}`} position={[px,RISE+0.18,pz]} castShadow={!ghost}>
-          <boxGeometry args={[0.10,0.36,0.10]} />
-          <meshStandardMaterial color={CREAM} roughness={0.84} transparent={tr} opacity={op} depthWrite={!ghost}/>
-        </mesh>
-      ))}
+
       {/* Dormer window on front slope */}
       {!ghost && (
-        <group position={[0,0.14,OZ-0.08]}>
+        <group position={[0, 0.16, OX - 0.08]}>
           <mesh castShadow>
             <boxGeometry args={[0.68,0.52,0.072]} />
             <meshStandardMaterial color="#2A1E0C" roughness={0.82}/>
@@ -1904,21 +2141,52 @@ function TitleHUD({ score, stage }) {
   );
 }
 
-function StageBar({ score }) {
+function StageBar({ score, isPlaying, onTogglePlay, onStageClick }) {
   const stage=getStage(score);
   return (
     <div style={{position:'absolute',bottom:28,left:'50%',transform:'translateX(-50%)',display:'flex',alignItems:'center',
-      gap:0,background:'rgba(7,5,3,0.80)',backdropFilter:'blur(10px)',border:'1px solid #221A10',
-      borderRadius:40,padding:'10px 28px',boxShadow:'0 4px 24px rgba(0,0,0,0.55)'}}>
+      gap:14,background:'rgba(7,5,3,0.84)',backdropFilter:'blur(12px)',border:'1px solid #322618',
+      borderRadius:40,padding:'10px 28px',boxShadow:'0 4px 28px rgba(0,0,0,0.65)',zIndex:100}}>
+      
+      {/* Play/Pause Button */}
+      <button onClick={onTogglePlay} style={{
+        background:'none',border:'none',color:'#D4A855',cursor:'pointer',
+        fontSize:11,display:'flex',alignItems:'center',gap:5,fontWeight:700,
+        fontFamily:'Outfit, sans-serif',letterSpacing:'0.08em',textTransform:'uppercase',
+        padding:'4px 10px',borderRadius:20,transition:'all 0.3s ease',
+        boxShadow:'inset 0 0 0 1px rgba(212,168,85,0.12)',marginRight:8
+      }}
+      onMouseEnter={e=>e.currentTarget.style.boxShadow='inset 0 0 0 1px rgba(212,168,85,0.45)'}
+      onMouseLeave={e=>e.currentTarget.style.boxShadow='inset 0 0 0 1px rgba(212,168,85,0.12)'}>
+        {isPlaying ? '⏸ PAUSE' : '▶ PLAY'}
+      </button>
+
+      {/* Divider */}
+      <div style={{width:1,height:18,background:'#3A2E1C',marginRight:6}}/>
+
+      {/* Stages list */}
       {STAGE_NAMES.map((name,i)=>{
         const reached=score>=STAGE_SCORES[i], current=stage===i;
         return (
           <React.Fragment key={name}>
-            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:5}}>
-              <div style={{width:current?12:8,height:current?12:8,borderRadius:'50%',background:current?'#D4A855':reached?'#5A4030':'#1E1810',boxShadow:current?'0 0 12px #D4A855BB':'none',transition:'all 0.6s ease'}}/>
-              <span style={{fontSize:8,fontFamily:'monospace',letterSpacing:'0.14em',color:current?'#C8A044':reached?'#4A3828':'#1E1810',textTransform:'uppercase',transition:'color 0.6s ease'}}>{name}</span>
+            <div
+              onClick={() => onStageClick(i)}
+              style={{display:'flex',flexDirection:'column',alignItems:'center',gap:5,cursor:'pointer'}}
+              title={`Jump to ${name} Stage`}>
+              <div style={{
+                width:current?12:8,height:current?12:8,borderRadius:'50%',
+                background:current?'#D4A855':reached?'#5A4030':'#1E1810',
+                boxShadow:current?'0 0 12px #D4A855BB':'none',
+                transform:current?'scale(1.2)':'scale(1.0)',
+                transition:'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+              }}/>
+              <span style={{
+                fontSize:8,fontFamily:'Outfit, monospace',fontWeight:600,letterSpacing:'0.14em',
+                color:current?'#D4A855':reached?'#7A5E44':'#2A241C',
+                textTransform:'uppercase',transition:'color 0.4s ease'
+              }}>{name}</span>
             </div>
-            {i<STAGE_NAMES.length-1&&<div style={{width:28,height:1,margin:'0 4px',marginBottom:12,background:reached&&score>=STAGE_SCORES[i+1]?'#5A4030':'#1E1810',transition:'background 0.4s ease'}}/>}
+            {i<STAGE_NAMES.length-1&&<div style={{width:24,height:1,margin:'0 2px',marginBottom:12,background:reached&&score>=STAGE_SCORES[i+1]?'#5A4030':'#1E1810',transition:'background 0.4s ease'}}/>}
           </React.Fragment>
         );
       })}
@@ -2033,9 +2301,13 @@ export default function BranchingPOCViewport() {
   const [blockStates,setBlockStates]=useState(()=>Object.fromEntries(SLOTS.map(s=>[s.id,'pending'])));
   const [score,setScore]=useState(0);
   const [peekStage,setPeekStage]=useState(null); // null=normal, 0=hut, 1=cottage, 2=house...
+  const [isPlaying,setIsPlaying]=useState(true);
   const fireDustRef=useRef(null), flashRef=useRef(null);
   const queueRef=useRef([]), busyRef=useRef(false);
   const prevStageRef=useRef(0);
+
+  const isPlayingRef=useRef(true);
+  const timeoutIdRef=useRef(null);
 
   const setOne=useCallback((id,s)=>setBlockStates(p=>({...p,[id]:s})),[]);
 
@@ -2061,7 +2333,7 @@ export default function BranchingPOCViewport() {
   const STAGE_PAUSE_MS = 4200;
 
   const pop=useCallback(()=>{
-    if (busyRef.current||!queueRef.current.length) return;
+    if (!isPlayingRef.current || busyRef.current||!queueRef.current.length) return;
     busyRef.current=true;
     const id=queueRef.current.shift();
     const slot=SLOTS.find(s=>s.id===id);
@@ -2094,15 +2366,70 @@ export default function BranchingPOCViewport() {
       const isStageComplete = nextSlot && getStage(nextSlot.sc) > getStage(newScore);
       const delay = isStageComplete ? STAGE_PAUSE_MS : GAP_MS;
 
-      setTimeout(pop, delay);
+      if (isPlayingRef.current) {
+        timeoutIdRef.current = setTimeout(pop, delay);
+      }
     },GHOST_MS+FALL_MS+SETTLE_MS);
   },[setOne,retireStage]);
 
   useEffect(()=>{
+    isPlayingRef.current = isPlaying;
+  },[isPlaying]);
+
+  useEffect(()=>{
     queueRef.current=SLOTS.filter(s=>s.sc<=POC_SCORE).sort((a,b)=>a.sc-b.sc).map(s=>s.id);
-    const t=setTimeout(pop,900);
-    return ()=>clearTimeout(t);
+    timeoutIdRef.current=setTimeout(pop,900);
+    return ()=>{
+      if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
+    };
+  }, [pop]);
+
+  const togglePlay=useCallback(()=>{
+    setIsPlaying(p=>{
+      const next=!p;
+      isPlayingRef.current=next;
+      if (next && !busyRef.current) {
+        pop();
+      }
+      return next;
+    });
   },[pop]);
+
+  const jumpToStage=useCallback((si)=>{
+    // 1. Pause and clear any pending loops
+    setIsPlaying(false);
+    isPlayingRef.current=false;
+    if (timeoutIdRef.current) {
+      clearTimeout(timeoutIdRef.current);
+      timeoutIdRef.current=null;
+    }
+    busyRef.current=false;
+
+    // 2. Set target score to the start score of that stage
+    const targetScore = STAGE_SCORES[si];
+    setScore(targetScore);
+    prevStageRef.current = si;
+
+    // 3. Rebuild the blockStates map
+    setBlockStates(()=>{
+      const next={};
+      SLOTS.forEach(slot=>{
+        if (slot.sc<=targetScore) {
+          if (slot.retirable && slot.si<si) {
+            next[slot.id]='dormant';
+          } else {
+            next[slot.id]=CRACKED_IDS.has(slot.id)?'cracked':'placed';
+          }
+        } else {
+          next[slot.id]='pending';
+        }
+      });
+      return next;
+    });
+
+    // 4. Fill queue with subsequent blocks
+    queueRef.current=SLOTS.filter(s=>s.sc>targetScore).sort((a,b)=>a.sc-b.sc).map(s=>s.id);
+  },[]);
 
   const repair=useCallback(()=>{
     CRACKED_IDS.forEach(id=>{
@@ -2151,7 +2478,12 @@ export default function BranchingPOCViewport() {
         onClose={() => setPeekStage(null)}
       />
       <RepairBtn blockStates={blockStates} onRepair={repair} />
-      <StageBar score={score} />
+      <StageBar
+        score={score}
+        isPlaying={isPlaying}
+        onTogglePlay={togglePlay}
+        onStageClick={jumpToStage}
+      />
       <div style={{position:'absolute',inset:0,pointerEvents:'none',background:'radial-gradient(ellipse 82% 82% at 50% 52%,transparent 46%,rgba(3,2,1,0.82) 100%)'}}/>
     </div>
   );

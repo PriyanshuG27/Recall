@@ -961,7 +961,6 @@ export default function Bridges() {
       {/* Success quantum gateway animation loop */}
       {connectionSuccess && (
         <div className="obs-success-modal">
-          <QuantumTunnelCanvas />
           <div className="obs-success-card">
             <SealCheck size={64} color="#00f0ff" className="br-success-zoom-icon" />
             <h2 className="obs-success-title">COGNITIVE TUNNEL SYNCHRONIZED</h2>

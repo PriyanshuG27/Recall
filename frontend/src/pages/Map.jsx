@@ -447,6 +447,48 @@ export default function MapPage() {
     setSelectedHub(null);
   }, []);
 
+  useEffect(() => {
+    const handleFocusNode = (e) => {
+      const nodeId = e.detail?.nodeId;
+      if (!nodeId) return;
+      const foundItem = items.find(it => it.id != null && String(it.id) === String(nodeId));
+      if (foundItem) {
+        setSelectedNode(foundItem);
+        setSelectedHub(null);
+        setFlareNodeId(nodeId);
+        window.dispatchEvent(new CustomEvent('map-canvas-focus', { detail: { nodeId } }));
+        setTimeout(() => {
+          setFlareNodeId(null);
+        }, 8000); // 8 seconds to be clearly visible
+      }
+    };
+    window.addEventListener('map-focus-node', handleFocusNode);
+    return () => window.removeEventListener('map-focus-node', handleFocusNode);
+  }, [items]);
+
+  useEffect(() => {
+    if (loading || items.length === 0) return;
+    const pendingNodeId = sessionStorage.getItem('pending_map_focus_node');
+    if (pendingNodeId) {
+      sessionStorage.removeItem('pending_map_focus_node');
+      const foundItem = items.find(it => it.id != null && String(it.id) === String(pendingNodeId));
+      if (foundItem) {
+        setSelectedNode(foundItem);
+        setSelectedHub(null);
+        setFlareNodeId(foundItem.id);
+        
+        // Wait briefly for canvas simulation initialization/mount
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('map-canvas-focus', { detail: { nodeId: foundItem.id } }));
+        }, 250);
+
+        setTimeout(() => {
+          setFlareNodeId(null);
+        }, 8000); // 8 seconds flare visibility
+      }
+    }
+  }, [loading, items]);
+
   const handleAutoFit = () => {
     AudioEngine.playClick();
     window.dispatchEvent(new CustomEvent('map-autofit'));

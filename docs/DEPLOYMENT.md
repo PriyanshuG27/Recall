@@ -138,6 +138,42 @@ Store output as `JWT_SECRET`.
 
 ---
 
+## 11. Low-RAM Deployment (Koyeb Free Tier / 512 MB RAM)
+
+| Spec | Value |
+|---|---|
+| Platform | Koyeb / Render Free Tier |
+| vCPU | 0.1 – 0.25 vCPU |
+| RAM | 512 MB RAM |
+| Strategy | Modal GPU Offload or FastEmbed (ONNX) |
+
+### Sentence Embeddings: FastEmbed (ONNX) vs PyTorch
+- **`sentence-transformers` (PyTorch)**: Requires ~400–500 MB RAM due to PyTorch autograd/CUDA overhead. Running locally on 512 MB RAM containers triggers Out-Of-Memory (OOM) crashes.
+- **`fastembed` (ONNX Runtime)**: Uses Microsoft ONNX Runtime compiled in C++. Consumes only **~45 MB RAM** with 100% identical vector output and 2x faster CPU inference.
+- **Modal GPU / Cloud API (Default Architecture)**: Offloads embedding calculations off-server via Modal/Gemini/HuggingFace APIs, keeping FastAPI memory footprint under **~90 MB RAM**.
+
+### Multi-Worker Concurrency (`WEB_CONCURRENCY`)
+- Set Gunicorn/Uvicorn workers dynamically based on CPU core count:
+  ```bash
+  gunicorn -w ${WEB_CONCURRENCY:-2} -k uvicorn.workers.UvicornWorker backend.main:app
+  ```
+
+---
+
+## 12. Load Testing & Webhook Latency Evaluation (k6 Results)
+
+| Load Setup | Total Req (60s) | Throughput | Median Latency | Error Rate | Status |
+|---|---|---|---|---|---|
+| 1 Worker (50 VUs) | 209 req | 3.05 req/s | 15.26 s | 0.00% | ✅ 100% 200 OK |
+| 12 Workers (50 VUs) | 2,516 req | 41.6 req/s | 513 ms | 0.00% | ✅ 100% 200 OK |
+
+### Evaluation & Findings
+1. **0% Error Rate**: 100% of all requests across all load test runs returned `HTTP 200 OK` with 0 server crashes.
+2. **Multi-Worker Scaling**: Scaling from 1 worker to 12 workers achieved a **12x throughput increase** (from 3 req/s to 41.6 req/s) and a **30x reduction in median latency** (from 15.2s down to 513ms).
+3. **Webhook Response Target**: Individual request handling completes in ~450ms–700ms (due to 3 sequential PostgreSQL queries per request). For ultra-low ACK latencies under heavy traffic spikes, non-blocking background tasks or database connection pooling (PgBouncer/Neon) should be utilized.
+
+---
+
 ## Deployment Order
 
 ```
@@ -146,7 +182,7 @@ Store output as `JWT_SECRET`.
 3. Modal        -> have MODAL_API_TOKEN
 4. Google OAuth -> have client credentials
 5. Generate FERNET_KEY + JWT_SECRET
-6. Render       -> deploy backend with all env vars
+6. Render/Koyeb -> deploy backend with all env vars
 7. Register webhook with Telegram
 8. Vercel       -> deploy frontend
 9. BotFather    -> setdomain to Vercel URL

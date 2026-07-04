@@ -6,6 +6,24 @@ import './index.css';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { ToastProvider } from './components/Toast.jsx';
 import { SocketProvider } from './context/SocketContext.jsx';
+import { initPerformanceMonitor } from './utils/PerformanceMonitor.js';
+
+// Initialize local Web Vitals performance tracing
+initPerformanceMonitor();
+
+/* ── Telegram WebApp Fetch Interceptor ──────────────────────── */
+if (typeof window !== 'undefined') {
+  const originalFetch = window.fetch;
+  window.fetch = function (url, options = {}) {
+    if (window.Telegram?.WebApp?.initData) {
+      options.headers = {
+        ...options.headers,
+        'Authorization': `TelegramInitData ${window.Telegram.WebApp.initData}`
+      };
+    }
+    return originalFetch(url, options);
+  };
+}
 
 /* ── Dev-mode error overlay (shows crash message on screen) ── */
 class DevErrorBoundary extends React.Component {

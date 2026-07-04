@@ -241,6 +241,30 @@ def check_prompt_injection(query: str) -> Optional[str]:
     return None
 
 class AICascade:
+    def _sanitize_json_newlines(self, s: str) -> str:
+        """
+        Scans a string, identifies raw newlines inside double-quoted JSON string values,
+        and escapes them to '\\n' so it forms a valid JSON block.
+        """
+        chars = []
+        in_string = False
+        escaped = False
+        for char in s:
+            if char == '"' and not escaped:
+                in_string = not in_string
+            if char == '\\' and in_string:
+                escaped = not escaped
+            else:
+                escaped = False
+                
+            if char == '\n' and in_string:
+                chars.append('\\n')
+            elif char == '\r' and in_string:
+                chars.append('\\r')
+            else:
+                chars.append(char)
+        return "".join(chars)
+
     def _extract_fields_from_truncated_json(self, text: str) -> dict:
         """
         Attempts to extract 'summary', 'tags', and 'context_prompt' from a potentially
@@ -366,6 +390,7 @@ class AICascade:
                     cleaned = re.sub(r"^```(?:json)?\n", "", cleaned)
                     cleaned = re.sub(r"\n```$", "", cleaned)
                     cleaned = cleaned.strip()
+                cleaned = self._sanitize_json_newlines(cleaned)
                 try:
                     import json
                     match = re.search(r"\{.*\}", cleaned, re.DOTALL)
@@ -397,6 +422,14 @@ class AICascade:
                 except Exception as e:
                     logger.error("Fallback tag/question generation failed: %s", e)
                     tags = []
+
+        if summary:
+            # If tags are empty, attempt to extract from raw hashtags in the summary text
+            if not tags:
+                tags = re.findall(r"#([a-zA-Z0-9_-]+)", summary)
+            # Remove any trailing dividers and hashtag metadata lines from the summary text
+            summary = re.sub(r"[\-\u2500\u2502_]{3,}.*$", "", summary, flags=re.DOTALL).strip()
+            summary = re.sub(r"#([a-zA-Z0-9_-]+)", "", summary).strip()
 
         # Normalize tags
         normalized_tags = self._normalize_tags(tags)
@@ -745,9 +778,6 @@ class AICascade:
             model_messages = messages
             
             if "qwen" in model.lower():
-                # Qwen supports larger context on Groq, so we don't need to subtract prompt tokens.
-                # Let's set max_tokens to 2048 directly to prevent truncation.
-                model_max_tokens = 2048
                 
                 # Append/prepend anti-thinking JSON instructions to Qwen if JSON requested
                 if is_json_requested:
@@ -774,7 +804,7 @@ class AICascade:
                 "temperature": temperature,
                 "max_tokens": model_max_tokens
             }
-            if is_json_requested and "qwen" not in model.lower():
+            if is_json_requested:
                 payload["response_format"] = {"type": "json_object"}
             try:
                 from backend.services.http_client import get_http_client

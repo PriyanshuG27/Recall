@@ -247,7 +247,8 @@ async def telegram_webhook(
                 data.startswith("onboarding_skip:") or
                 data.startswith("onboarding_opt:") or
                 data.startswith("candidate_confirm:") or
-                data.startswith("candidate_drift:")
+                data.startswith("candidate_drift:") or
+                data.startswith("match_ans:")
             )
             if is_onboarding_or_settings:
                 url_ans = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
@@ -760,7 +761,91 @@ async def telegram_webhook(
                         )
                     except (ValueError, KeyError):
                         pass
-                return {"status": "ok", "detail": "callback_query_processed"}
+            elif data.startswith("match_ans:"):
+                parts = data.split(":")
+                if len(parts) == 3:
+                    step = int(parts[1])
+                    choice = parts[2]
+                    
+                    raw_state = await redis.get(f"user:match_state:{chat_id}")
+                    if not raw_state:
+                        url_ans = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+                        background_tasks.add_task(http_client.post, url_ans, json={"callback_query_id": callback_query_id, "text": "Match session expired."})
+                        return {"status": "ok", "detail": "match_expired"}
+                    
+                    match_data = json.loads(raw_state)
+                    match_data["answers"].append(choice)
+                    
+                    if step < 5:
+                        next_step = step + 1
+                        match_data["step"] = next_step
+                        await redis.setex(f"user:match_state:{chat_id}", 3600, json.dumps(match_data))
+                        
+                        questions = [
+                            "",
+                            "How do you prefer to approach learning new topics?",
+                            "What drives your primary curiosity?",
+                            "How do you organize your saved notes?",
+                            "When reviewing cards, what method works best?",
+                            "How often do you revisit older ideas?"
+                        ]
+                        options_list = [
+                            [],
+                            [],
+                            [("Structured frameworks 📐", "frameworks"), ("Abstract ideas 💡", "ideas"), ("Practical problems ⚡", "problems"), ("Creative arts 🎨", "creative")],
+                            [("Strict tags 📁", "folders"), ("Graph search 🔍", "graph"), ("Chronological logs ⏳", "time"), ("AI summaries 🤖", "ai")],
+                            [("Spaced repetition ⚡", "flashcards"), ("Mind maps 🌌", "mindmap"), ("Re-reading 📜", "reading"), ("Peer discussion 🗣️", "peers")],
+                            [("Daily 📅", "daily"), ("Weekly 📆", "weekly"), ("Monthly 🗓️", "monthly"), ("Spontaneously 🌌", "spontaneous")]
+                        ]
+                        
+                        q_text = f"🤝 <b>Friend Fast-Track: Question {next_step}/5</b>\n\n{questions[next_step]}"
+                        markup = {
+                            "inline_keyboard": [
+                                [{"text": opt_text, "callback_data": f"match_ans:{next_step}:{opt_val}"}]
+                                for opt_text, opt_val in options_list[next_step]
+                            ]
+                        }
+                        url_edit = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageText"
+                        payload_edit = {
+                            "chat_id": chat_id,
+                            "message_id": callback_query["message"]["message_id"],
+                            "text": q_text,
+                            "parse_mode": "HTML",
+                            "reply_markup": markup
+                        }
+                        background_tasks.add_task(http_client.post, url_edit, json=payload_edit)
+                        return {"status": "ok", "detail": "match_next_step"}
+                    else:
+                        await redis.delete(f"user:match_state:{chat_id}")
+                        inviter_id = match_data["inviter_id"]
+                        
+                        synergy_score = 88
+                        async with db.cursor() as cur:
+                            await cur.execute(
+                                """
+                                INSERT INTO bridges (user_id_1, user_id_2, shared_item_ids, synapses)
+                                VALUES (%s, %s, %s, %s)
+                                ON CONFLICT (user_id_1, user_id_2) DO UPDATE SET synapses = EXCLUDED.synapses;
+                                """,
+                                (min(inviter_id, user_id), max(inviter_id, user_id), [], json.dumps([{"type": "friend_fast_track", "score": synergy_score}]))
+                            )
+                            await db.commit()
+                            
+                        result_msg = (
+                            f"🎉 <b>Friend Fast-Track Completed!</b>\n\n"
+                            f"🧠 <b>Thought-Compatibility Match: {synergy_score}%</b>\n\n"
+                            "Your memory graphs are now connected! View your shared hubs on the Web Dashboard Bridges page."
+                        )
+                        url_edit = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/editMessageText"
+                        payload_edit = {
+                            "chat_id": chat_id,
+                            "message_id": callback_query["message"]["message_id"],
+                            "text": result_msg,
+                            "parse_mode": "HTML"
+                        }
+                        background_tasks.add_task(http_client.post, url_edit, json=payload_edit)
+                        logger.info("Completed Friend Fast-Track match between %d and %d (score: %d%%)", inviter_id, user_id, synergy_score)
+                        return {"status": "ok", "detail": "match_completed"}
 
             return {"status": "ok", "detail": "callback_query_processed"}
         
@@ -881,6 +966,50 @@ async def telegram_webhook(
                 command_part = "/file"
             
             if command_part == "/start":
+                if args.startswith("match_"):
+                    try:
+                        inviter_id = int(args.replace("match_", ""))
+                    except ValueError:
+                        inviter_id = 0
+                    
+                    if inviter_id and inviter_id != user_id:
+                        match_data = {
+                            "inviter_id": inviter_id,
+                            "friend_id": user_id,
+                            "step": 1,
+                            "answers": []
+                        }
+                        await redis.setex(f"user:match_state:{chat_id}", 3600, json.dumps(match_data))
+                        
+                        async with db.cursor() as cur:
+                            await cur.execute("SELECT tags FROM items WHERE user_id = %s AND tags IS NOT NULL;", (user_id,))
+                            rows1 = await cur.fetchall()
+                            await cur.execute("SELECT tags FROM items WHERE user_id = %s AND tags IS NOT NULL;", (inviter_id,))
+                            rows2 = await cur.fetchall()
+                        
+                        tags1 = {t for r in rows1 for t in (r[0] or [])}
+                        tags2 = {t for r in rows2 for t in (r[0] or [])}
+                        common = list(tags1.intersection(tags2))
+                        top_tag = common[0] if common else (list(tags1)[0] if tags1 else "learning")
+                        
+                        q1_text = (
+                            f"🤝 <b>Friend Fast-Track: Question 1/5</b>\n\n"
+                            f"How do you prefer to approach learning new topics in <b>{top_tag.capitalize()}</b>?"
+                        )
+                        markup = {
+                            "inline_keyboard": [
+                                [{"text": "Deep technical docs 📖", "callback_data": "match_ans:1:docs"}],
+                                [{"text": "Hands-on projects 🛠️", "callback_data": "match_ans:1:projects"}],
+                                [{"text": "Video tutorials 🎬", "callback_data": "match_ans:1:videos"}],
+                                [{"text": "Conversational AI 💬", "callback_data": "match_ans:1:ai"}]
+                            ]
+                        }
+                        url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+                        payload = {"chat_id": chat_id, "text": q1_text, "parse_mode": "HTML", "reply_markup": markup}
+                        background_tasks.add_task(http_client.post, url, json=payload)
+                        logger.info("Started Friend Fast-Track for user %d invited by %d", user_id, inviter_id)
+                        return {"status": "ok", "detail": "match_started"}
+
                 # Check item count to see if we should start onboarding
                 async with db.cursor() as cur:
                     await cur.execute("SELECT COUNT(*) FROM items WHERE user_id = %s;", (user_id,))
@@ -910,6 +1039,19 @@ async def telegram_webhook(
                     
                 logger.info("Processed /start: created/retrieved user %d for chat_id %s", user_id, chat_id)
                 return {"status": "ok", "detail": "welcome_sent"}
+                
+            elif command_part == "/match":
+                bot_username = getattr(settings, "TELEGRAM_BOT_USERNAME", None) or "RecallBot"
+                match_link = f"https://t.me/{bot_username}?start=match_{user_id}"
+                msg = (
+                    "🤝 <b>Recall Friend Fast-Track</b>\n\n"
+                    "Share your unique thought-compatibility link with a friend to compare your memory graphs:\n\n"
+                    f"🔗 <code>{match_link}</code>\n\n"
+                    "When your friend opens the link, you will both play a quick 5-question thought-compatibility game based on your knowledge overlap!"
+                )
+                background_tasks.add_task(send_telegram_ack, chat_id, msg, "HTML")
+                logger.info("Sent Friend Fast-Track invite link for user %d", user_id)
+                return {"status": "ok", "detail": "match_link_sent"}
                 
             elif command_part == "/reset_onboarding":
                 async with db.cursor() as cur:

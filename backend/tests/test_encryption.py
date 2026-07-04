@@ -7,6 +7,7 @@ All tests use monkeypatched settings — zero real Fernet keys from disk.
 """
 
 import pytest
+import unittest.mock as mock
 from cryptography.fernet import InvalidToken
 
 
@@ -123,3 +124,10 @@ def test_no_key_in_logs(caplog, monkeypatch):
         assert fernet_key not in record.getMessage(), (
             "FERNET_KEY appeared in log output — security violation!"
         )
+
+def test_encryption_settings_none_raises():
+    import backend.services.encryption as enc_mod
+    enc_mod._fernet_cached = None
+    with mock.patch("backend.config.settings", None):
+        with pytest.raises(RuntimeError):
+            enc_mod._get_fernet()

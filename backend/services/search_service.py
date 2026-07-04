@@ -33,10 +33,12 @@ async def embed_text(text: str) -> List[float]:
         if cached_embed_str:
             cached_embed = json.loads(cached_embed_str)
             if isinstance(cached_embed, list) and len(cached_embed) == 384:
+                logger.info("Embedding cache HIT for text of length %d", len(text))
                 return cached_embed
     except Exception as e:
         logger.warning("Failed to fetch embedding from Redis cache: %s", e)
 
+    logger.info("Embedding cache MISS for text of length %d. Generating new embedding...", len(text))
     embedding = await _generate_embedding_uncached(text)
 
     try:
@@ -50,9 +52,12 @@ async def embed_text(text: str) -> List[float]:
 
 async def _generate_embedding_uncached(text: str) -> List[float]:
     """Generate the embedding from remote API or local model without caching."""
+    global _local_model
+
     # 1. Try Modal if a real API token is configured
     if settings.MODAL_API_TOKEN and not settings.MODAL_API_TOKEN.startswith("ak-mock"):
         try:
+            logger.info("Attempting embedding generation via Modal...")
             # Call the Modal MiniLM endpoint
             url = "https://pri27--minilm-embed.modal.run/embed"
             headers = {"Authorization": f"Bearer {settings.MODAL_API_TOKEN}"}
@@ -61,28 +66,47 @@ async def _generate_embedding_uncached(text: str) -> List[float]:
                 if response.status_code == 200:
                     data = response.json()
                     if isinstance(data, list) and len(data) == 384:
+                        logger.info("Successfully generated embedding via Modal API.")
                         return data
                 else:
                     logger.warning("Modal embedding returned status code %d", response.status_code)
         except Exception as e:
             logger.error("Failed to generate embedding via Modal: %s", e)
 
-    # 2. Try Local SentenceTransformer (if installed in the environment)
+    # 2. Try Local FastEmbed (ONNX - ultra-lightweight ~45MB RAM for Koyeb Free Tier)
+    try:
+        from fastembed import TextEmbedding
+        if _local_model is None or not isinstance(_local_model, TextEmbedding):
+            logger.info("Initializing local FastEmbed TextEmbedding('BAAI/bge-small-en-v1.5')...")
+            _local_model = TextEmbedding("BAAI/bge-small-en-v1.5")
+        
+        logger.info("Attempting local embedding generation via FastEmbed ONNX...")
+        import asyncio
+        loop = asyncio.get_running_loop()
+        embeddings = await loop.run_in_executor(None, lambda: list(_local_model.embed([text])))
+        if embeddings and len(embeddings[0]) == 384:
+            logger.info("Successfully generated embedding via local FastEmbed (ONNX).")
+            return [float(x) for x in embeddings[0]]
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.error("Failed to generate embedding via FastEmbed: %s", e)
+
+    # 2.5 Try Local SentenceTransformer (if installed)
     try:
         from sentence_transformers import SentenceTransformer
-        global _local_model
-        if _local_model is None:
+        if _local_model is None or not hasattr(_local_model, "encode"):
             logger.info("Initializing local SentenceTransformer('all-MiniLM-L6-v2')...")
             _local_model = SentenceTransformer("all-MiniLM-L6-v2")
         
-        # Run local CPU inference in executor so it doesn't block the main event loop
+        logger.info("Attempting local embedding generation via SentenceTransformer...")
         import asyncio
         loop = asyncio.get_running_loop()
         embedding = await loop.run_in_executor(None, lambda: _local_model.encode(text).tolist())
         if isinstance(embedding, list) and len(embedding) == 384:
+            logger.info("Successfully generated embedding via local SentenceTransformer.")
             return embedding
     except ImportError:
-        # Not installed in current environment, ignore and proceed to Gemini fallback
         pass
     except Exception as e:
         logger.error("Failed to generate local embedding: %s", e)
@@ -90,6 +114,7 @@ async def _generate_embedding_uncached(text: str) -> List[float]:
     # 3. Try Hugging Face Serverless Inference API if HF_TOKEN is configured
     if settings.HF_TOKEN and not settings.HF_TOKEN.startswith("mock") and settings.HF_TOKEN != "":
         try:
+            logger.info("Attempting embedding generation via Hugging Face Inference API...")
             url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
             headers = {"Authorization": f"Bearer {settings.HF_TOKEN}"}
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -98,8 +123,10 @@ async def _generate_embedding_uncached(text: str) -> List[float]:
                     data = response.json()
                     if isinstance(data, list):
                         if len(data) == 384:
+                            logger.info("Successfully generated embedding via Hugging Face Inference API.")
                             return data
                         elif len(data) > 0 and isinstance(data[0], list) and len(data[0]) == 384:
+                            logger.info("Successfully generated embedding via Hugging Face Inference API.")
                             return data[0]
                 else:
                     logger.warning("Hugging Face embedding returned status code %d: %s", response.status_code, response.text)
@@ -124,12 +151,14 @@ async def _generate_embedding_uncached(text: str) -> List[float]:
                     res_data = response.json()
                     embedding = res_data.get("embedding", {}).get("values", [])
                     if isinstance(embedding, list) and len(embedding) == 384:
+                        logger.info("Successfully generated embedding via Gemini fallback.")
                         return embedding
                 else:
                     logger.warning("Gemini embedding returned status code %d: %s", response.status_code, response.text)
         except Exception as e:
             logger.error("Failed to generate embedding via Gemini fallback: %s", e)
 
+    logger.warning("All embedding generation methods failed. Returning fallback mock vector.")
     val = 1.0 / (384 ** 0.5)
     return [val] * 384
 

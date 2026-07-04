@@ -35,7 +35,8 @@ yt-dlp>=2024.5.27
 # Local Environment Support
 python-dotenv>=1.2.2
 
-# Local Embeddings (Optional for offline dev/saving quota)
+# Local Embeddings (FastEmbed ONNX for low-RAM cloud deployment)
+fastembed>=0.3.0
 sentence-transformers>=3.0.1
 
 

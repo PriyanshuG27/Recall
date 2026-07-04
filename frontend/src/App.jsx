@@ -20,6 +20,7 @@ const Settings = lazy(() => import('./pages/Settings'));
 const Profile  = lazy(() => import('./pages/Profile'));
 const Bridges  = lazy(() => import('./pages/Bridges'));
 const BranchingPOC = lazy(() => import('./pages/BranchingPOC'));
+import PWAInstallBanner from './components/PWAInstallBanner';
 
 /* ── Map pathname → room id ──────────────────────────────── */
 function pathToRoom(pathname) {
@@ -38,11 +39,71 @@ function pathToRoom(pathname) {
 function RoomLoader() {
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100%', color: 'var(--text-muted)',
-      fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '0.08em',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      height: '100%', width: '100%', background: '#030307', gap: '1rem',
+      userSelect: 'none', position: 'relative', overflow: 'hidden', minHeight: '400px'
     }}>
-      <span>LOADING SIGNAL…</span>
+      {/* Scanline Effect */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%)',
+        backgroundSize: '100% 4px', zIndex: 2, pointerEvents: 'none'
+      }} />
+      
+      {/* Cybernetic Pulse Ring */}
+      <svg width="40" height="40" viewBox="0 0 40 40" style={{ overflow: 'visible' }}>
+        <circle 
+          cx="20" cy="20" r="3" 
+          fill="#CFA365" 
+          style={{
+            transformOrigin: '20px 20px',
+            animation: 'pulseCore 1.5s ease-in-out infinite',
+          }} 
+        />
+        <circle 
+          cx="20" cy="20" r="15" 
+          fill="none" stroke="#CFA365" strokeWidth="1" 
+          strokeDasharray="10 5"
+          style={{
+            transformOrigin: '20px 20px',
+            animation: 'spinOrbit 3s linear infinite',
+            opacity: 0.5
+          }} 
+        />
+      </svg>
+      
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem'
+      }}>
+        <div style={{
+          fontFamily: 'var(--font-mono, monospace)', fontSize: 10,
+          color: '#CFA365', letterSpacing: '0.15em',
+          animation: 'pulseText 1.5s ease-in-out infinite'
+        }}>
+          ESTABLISHING SECURE CONNECTION...
+        </div>
+        <div style={{
+          fontFamily: 'var(--font-mono, monospace)', fontSize: 9,
+          color: 'rgba(255,255,255,0.3)', letterSpacing: '0.1em'
+        }}>
+          DECRYPTING ROOM BUFFER
+        </div>
+      </div>
+
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes pulseCore {
+          0%, 100% { transform: scale(0.8); opacity: 0.5; }
+          50% { transform: scale(1.2); opacity: 1; }
+        }
+        @keyframes spinOrbit {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pulseText {
+          0%, 100% { opacity: 0.6; }
+          50% { opacity: 1; }
+        }
+      `}} />
     </div>
   );
 }
@@ -405,7 +466,21 @@ function App() {
         totalSaves={totalSaves}
         onItemSelect={(item) => {
           setSelectedItemForArchive(item);
-          handleNavigate('archive');
+          if (currentRoom !== 'map') {
+            handleNavigate('archive');
+          } else {
+            // If on map, click on source card selects and focuses it directly
+            window.dispatchEvent(new CustomEvent('map-focus-node', { detail: { nodeId: item.id } }));
+          }
+        }}
+        onCitationClick={(nodeId, item) => {
+          if (item) setSelectedItemForArchive(item);
+          if (currentRoom === 'map') {
+            window.dispatchEvent(new CustomEvent('map-focus-node', { detail: { nodeId } }));
+          } else {
+            sessionStorage.setItem('pending_map_focus_node', String(nodeId));
+            handleNavigate('map');
+          }
         }}
       />
 
@@ -425,6 +500,9 @@ function App() {
           }}
         />
       )}
+
+      {/* PWA Floating Install Banner */}
+      <PWAInstallBanner />
       </div>
     </PerfProvider>
   );

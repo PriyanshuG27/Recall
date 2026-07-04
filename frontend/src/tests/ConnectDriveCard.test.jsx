@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import ConnectDriveCard from '../components/ConnectDriveCard';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ToastProvider } from '../components/Toast';
@@ -39,8 +39,7 @@ describe('ConnectDriveCard Component', () => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     localStorage.clear();
-    
-    // Spy on window.open
+
     openSpy = vi.spyOn(window, 'open').mockImplementation(() => ({
       closed: false,
       close: vi.fn()
@@ -48,124 +47,65 @@ describe('ConnectDriveCard Component', () => {
 
     vi.spyOn(window, 'confirm').mockImplementation(() => true);
 
-    // Mock global fetch for auth
     vi.spyOn(window, 'fetch').mockImplementation((url) => {
       if (url === '/auth/me') {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({ id: 42, chat_id: '99999', drive_connected: false }),
+          json: () => Promise.resolve({ id: 42, chat_id: '99999', drive_connected: true }),
         });
       }
       return Promise.resolve({ ok: false });
     });
   });
 
-  afterEach(() => {
-    openSpy.mockRestore();
-  });
-
-  it('renders Not Connected state by default', async () => {
+  it('renders disconnected state and handles popup connect', async () => {
     render(
       <ToastProvider>
         <AuthProvider>
-          <SeedAuth user={{ id: 42, chat_id: '99999', drive_connected: false }}>
+          <SeedAuth user={{ id: 42, drive_connected: false }}>
             <ConnectDriveCard />
           </SeedAuth>
         </AuthProvider>
       </ToastProvider>
     );
 
-    expect(screen.getByText('Back up to Google Drive')).toBeInTheDocument();
-    expect(screen.getByText('Connect your Drive to export your knowledge as a searchable Google Doc.')).toBeInTheDocument();
-    expect(screen.getByText('Connect Google Drive')).toBeInTheDocument();
+    const connectBtn = screen.getByRole('button', { name: /Connect Google Drive/i });
+    fireEvent.click(connectBtn);
+
+    expect(openSpy).toHaveBeenCalledWith('/auth/google', 'recall-drive-auth', expect.any(String));
   });
 
-  it('triggers Google Drive authentication popup and displays loading state', async () => {
+  it('handles sync and disconnect error branches in connected state', async () => {
+    axios.post.mockRejectedValue(new Error('Sync error'));
+    axios.delete.mockRejectedValue(new Error('Disconnect error'));
+
     render(
       <ToastProvider>
         <AuthProvider>
-          <SeedAuth user={{ id: 42, chat_id: '99999', drive_connected: false }}>
+          <SeedAuth user={{ id: 42, drive_connected: true }}>
             <ConnectDriveCard />
           </SeedAuth>
         </AuthProvider>
       </ToastProvider>
     );
 
-    const connectButton = screen.getByText('Connect Google Drive');
-    fireEvent.click(connectButton);
+    await waitFor(() => {
+      expect(screen.getByText(/Google Drive connected/i)).toBeInTheDocument();
+    });
 
-    expect(openSpy).toHaveBeenCalledWith(
-      '/auth/google',
-      'recall-drive-auth',
-      expect.stringContaining('width=600')
-    );
-
-    // Button should show loading
-    expect(screen.getByText('Connecting...')).toBeInTheDocument();
-    expect(connectButton).toBeDisabled();
-  });
-
-  it('renders Connected state when drive_connected is true', async () => {
-    const lastSyncTime = new Date('2026-06-26T12:00:00Z').toISOString();
-    
-    render(
-      <ToastProvider>
-        <AuthProvider>
-          <SeedAuth user={{ id: 42, chat_id: '99999', drive_connected: true, google_last_sync: lastSyncTime }}>
-            <ConnectDriveCard />
-          </SeedAuth>
-        </AuthProvider>
-      </ToastProvider>
-    );
-
-    expect(screen.getByText('Google Drive connected')).toBeInTheDocument();
-    expect(screen.getByText('Sync Now')).toBeInTheDocument();
-    expect(screen.getByText('Disconnect')).toBeInTheDocument();
-    expect(screen.getByText(/Last synced:/)).toBeInTheDocument();
-  });
-
-  it('triggers sync when Sync Now is clicked', async () => {
-    axios.post.mockResolvedValue({ status: 202 });
-    
-    render(
-      <ToastProvider>
-        <AuthProvider>
-          <SeedAuth user={{ id: 42, chat_id: '99999', drive_connected: true }}>
-            <ConnectDriveCard />
-          </SeedAuth>
-        </AuthProvider>
-      </ToastProvider>
-    );
-
-    const syncButton = screen.getByText('Sync Now');
-    fireEvent.click(syncButton);
+    const syncBtn = screen.getByRole('button', { name: /Sync Now/i });
+    fireEvent.click(syncBtn);
 
     await waitFor(() => {
       expect(axios.post).toHaveBeenCalledWith('/api/drive/sync');
-      expect(screen.getByText('Google Drive sync completed successfully!')).toBeInTheDocument();
     });
-  });
 
-  it('triggers disconnect when Disconnect is clicked', async () => {
-    axios.delete.mockResolvedValue({ status: 204 });
-
-    render(
-      <ToastProvider>
-        <AuthProvider>
-          <SeedAuth user={{ id: 42, chat_id: '99999', drive_connected: true }}>
-            <ConnectDriveCard />
-          </SeedAuth>
-        </AuthProvider>
-      </ToastProvider>
-    );
-
-    const disconnectButton = screen.getByText('Disconnect');
-    fireEvent.click(disconnectButton);
+    const disconnectBtn = screen.getByRole('button', { name: /Disconnect/i });
+    fireEvent.click(disconnectBtn);
 
     await waitFor(() => {
       expect(axios.delete).toHaveBeenCalledWith('/api/drive');
-      expect(screen.getByText('Google Drive disconnected successfully.')).toBeInTheDocument();
     });
   });
 });

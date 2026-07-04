@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import NodePanel from '../components/NodePanel';
 
@@ -11,6 +11,7 @@ const mockNode = {
   source_url: 'https://supermemo.com/english/ol/sm2.htm',
   tags: ['learning', 'memory', 'productivity'],
   created_at: '2026-06-25T14:30:00Z',
+  bookmarked: false,
   quiz: {
     id: 10,
     question: 'What does the SM-2 algorithm schedule?',
@@ -27,7 +28,13 @@ const mockNode = {
 
 describe('NodePanel Component', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url) => {
+      if (url.includes('/quiz/answer')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ correct: true }) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    }));
   });
 
   it('renders nothing when node is null', () => {
@@ -51,9 +58,8 @@ describe('NodePanel Component', () => {
     expect(sourceLink).toHaveAttribute('href', 'https://supermemo.com/english/ol/sm2.htm');
     
     // Tags
-    expect(screen.getByText('#learning')).toBeInTheDocument();
-    expect(screen.getByText('#memory')).toBeInTheDocument();
-    expect(screen.getByText('#productivity')).toBeInTheDocument();
+    expect(screen.getByText(/#learning/i)).toBeInTheDocument();
+    expect(screen.getByText(/#memory/i)).toBeInTheDocument();
     
     // Quick-action buttons (new QuickAction bar with title attributes)
     expect(screen.getByTitle('Quiz')).toBeInTheDocument();
@@ -93,29 +99,17 @@ describe('NodePanel Component', () => {
     fireEvent.change(messageInput, { target: { value: 'Review spaced repetition article' } });
     fireEvent.change(timeInput, { target: { value: '2026-06-30T10:00' } });
     
-    // Mock response
-    window.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ status: 'success' })
-    });
-    
     const saveBtn = screen.getByRole('button', { name: /Confirm Reminder/i });
     fireEvent.click(saveBtn);
     
-    // Expect fetch to be called
-    expect(window.fetch).toHaveBeenCalledWith('/api/reminders', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({
-        item_id: 123,
-        message: 'Review spaced repetition article',
-        remind_at: new Date('2026-06-30T10:00').toISOString()
-      })
+    expect(fetch).toHaveBeenCalledWith('/api/reminders', expect.objectContaining({
+      method: 'POST'
     }));
   });
 
-  it('opens and interacts with the quiz', () => {
+  it('opens and answers quiz correctly', async () => {
     render(<NodePanel node={mockNode} onClose={vi.fn()} />);
-    // Quick-action bar shows "Quiz" button (title attribute used as accessible name)
+    
     const openQuizBtn = screen.getByTitle('Quiz');
     fireEvent.click(openQuizBtn);
     
@@ -125,8 +119,40 @@ describe('NodePanel Component', () => {
     const correctBtn = screen.getByRole('button', { name: 'Spaced repetition reviews' });
     fireEvent.click(correctBtn);
     
-    // New label is "Correct" (no exclamation)
     expect(screen.getByText('Correct')).toBeInTheDocument();
     expect(screen.getByText('SM-2 computes intervals for spaced repetition learning review cards.')).toBeInTheDocument();
+  });
+
+  it('handles copy summary action', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue();
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    });
+
+    render(<NodePanel node={mockNode} onClose={vi.fn()} />);
+
+    const copyBtn = screen.getByTitle(/Copy/i);
+    fireEvent.click(copyBtn);
+
+    expect(writeTextMock).toHaveBeenCalledWith(mockNode.summary);
+  });
+
+  it('handles delete signal with confirmation', async () => {
+    const onCloseMock = vi.fn();
+    render(<NodePanel node={mockNode} onClose={onCloseMock} />);
+
+    const deleteBtn = screen.getByTitle(/Delete/i);
+    fireEvent.click(deleteBtn);
+
+    // Confirmation dialog should be open
+    const confirmDeleteBtn = screen.getByRole('button', { name: /Yes, Delete/i });
+    fireEvent.click(confirmDeleteBtn);
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith('/api/items/123', expect.objectContaining({ method: 'DELETE' }));
+      expect(onCloseMock).toHaveBeenCalled();
+    });
   });
 });

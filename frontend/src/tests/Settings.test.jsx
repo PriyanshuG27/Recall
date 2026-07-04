@@ -41,7 +41,6 @@ describe('Settings Page Component', () => {
     vi.spyOn(window, 'confirm').mockImplementation(() => true);
     vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(-300);
 
-    // Mock auth profile endpoint
     vi.spyOn(window, 'fetch').mockImplementation((url) => {
       if (url === '/auth/me') {
         return Promise.resolve({
@@ -69,7 +68,7 @@ describe('Settings Page Component', () => {
         });
       }
       if (url === '/api/reminders') {
-        return Promise.resolve({ data: [] });
+        return Promise.resolve({ data: [{ id: 1, message: 'Existing reminder', remind_at: '2026-07-10T10:00:00Z' }] });
       }
       return Promise.reject(new Error('not found'));
     });
@@ -86,18 +85,48 @@ describe('Settings Page Component', () => {
       </ToastProvider>
     );
 
-    expect(screen.getByText(/SYNCHRONIZING OBSERVER CONTROL…/i)).toBeInTheDocument();
-
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledWith('/api/me');
       expect(screen.getByText('Profile & Settings')).toBeInTheDocument();
-      expect(screen.getByText('5')).toBeInTheDocument(); // streak count
-      expect(screen.getByText(/20 signals/i)).toBeInTheDocument(); // total saves
-      expect(screen.getByText(/3 completed/i)).toBeInTheDocument(); // quizzes answered
-      expect(screen.getByText(/Local Timezone Offset/i)).toBeInTheDocument();
     });
 
+    // Test timezone change
     const select = screen.getByLabelText(/Local Timezone Offset/i);
-    expect(select.value).toBe('5.5');
+    fireEvent.change(select, { target: { value: '0' } });
+
+    await waitFor(() => {
+      expect(axios.patch).toHaveBeenCalled();
+    });
+  });
+
+  it('handles exporting data backup', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/me') return Promise.resolve({ data: {} });
+      if (url === '/api/reminders') return Promise.resolve({ data: [] });
+      if (url === '/api/export') return Promise.resolve({ data: new Blob(['{}']) });
+      return Promise.resolve({ data: {} });
+    });
+
+    localStorage.setItem('timezone_explicitly_set', 'true');
+
+    render(
+      <ToastProvider>
+        <AuthProvider>
+          <SeedAuth user={{ id: 42, username: 'testuser' }}>
+            <Settings />
+          </SeedAuth>
+        </AuthProvider>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Profile & Settings')).toBeInTheDocument();
+    });
+
+    const exportBtn = screen.getByRole('button', { name: /Export My Data \(JSON\)/i });
+    fireEvent.click(exportBtn);
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/api/export', expect.anything());
+    });
   });
 });

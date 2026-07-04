@@ -80,7 +80,7 @@ async def check_rate_limit(
             str(limit)
         )
         if not results or len(results) < 2:
-            return
+            return True
             
         count = int(results[0])
         oldest_member = results[1]
@@ -103,11 +103,14 @@ async def check_rate_limit(
             logger.warning("Rate limit exceeded for key %s: count=%d, retry_after=%.2fs", key, count, retry_after)
             raise RateLimitExceeded(retry_after=retry_after)
             
+        return True
+            
     except RateLimitExceeded:
         raise
     except Exception as e:
         # Fail open: log error but do not crash webhook or block user if Redis fails
         logger.exception("Rate limiter error for key %s. Failing open: %s", key, e)
+        return True
 
 
 def rate_limit(

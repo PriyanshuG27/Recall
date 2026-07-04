@@ -1,53 +1,50 @@
-import React from 'react';
-import { render, screen, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import React from 'react';
 import App from '../App';
-import { AuthProvider, useAuth } from '../context/AuthContext';
+import { AuthProvider } from '../context/AuthContext';
 import { ToastProvider } from '../components/Toast';
 
-function SeedAuth({ user, children }) {
-  const { login } = useAuth();
-  React.useEffect(() => {
-    if (user) login(user);
-  }, [user]);
-  return children;
-}
+// Mock Web Audio API for tests
+vi.stubGlobal('AudioContext', vi.fn().mockImplementation(() => ({
+  createOscillator: () => ({
+    type: 'sine',
+    frequency: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
+    connect: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn(),
+  }),
+  createGain: () => ({
+    gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
+    connect: vi.fn(),
+  }),
+  destination: {},
+  currentTime: 0,
+})));
 
 describe('App PWA and Session Tracking', () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
-    vi.clearAllMocks();
-    localStorage.clear();
     sessionStorage.clear();
-
-    vi.spyOn(window, 'fetch').mockImplementation((url) => {
-      if (url === '/auth/me') {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ id: 1, chat_id: '12345' }),
-        });
-      }
-      if (url === '/api/quizzes/due') {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve([]),
-        });
-      }
-      if (url.includes('/api/items')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
-        });
-      }
-      return Promise.resolve({ ok: false });
-    });
+    localStorage.clear();
+    vi.restoreAllMocks();
   });
 
-  it('increments session visits on mount if new session', async () => {
-    expect(localStorage.getItem('recall_visits')).toBeNull();
+  it('increments recall_visits on new session', () => {
+    render(
+      <ToastProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ToastProvider>
+    );
+
+    expect(sessionStorage.getItem('recall_session_active')).toBe('true');
+    expect(localStorage.getItem('recall_visits')).toBe('1');
+  });
+
+  it('does not increment recall_visits if session is active', () => {
+    sessionStorage.setItem('recall_session_active', 'true');
+    localStorage.setItem('recall_visits', '5');
 
     render(
       <ToastProvider>
@@ -57,57 +54,22 @@ describe('App PWA and Session Tracking', () => {
       </ToastProvider>
     );
 
-    expect(localStorage.getItem('recall_visits')).toBe('1');
-    expect(sessionStorage.getItem('recall_session_active')).toBe('true');
+    expect(localStorage.getItem('recall_visits')).toBe('5');
   });
 
-  it('triggers install toast on beforeinstallprompt event if visits >= 3', async () => {
-    localStorage.setItem('recall_visits', '3');
-    sessionStorage.setItem('recall_session_active', 'true');
-
+  it('renders splash loading state initially', () => {
     render(
       <ToastProvider>
         <AuthProvider>
-          <SeedAuth user={{ id: 1, chat_id: '12345' }}>
-            <App />
-          </SeedAuth>
+          <App />
         </AuthProvider>
       </ToastProvider>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText(/No signals received yet/i)).toBeInTheDocument();
-    });
-
-    const userPromptChoice = Promise.resolve({ outcome: 'accepted' });
-    const mockPromptEvent = {
-      preventDefault: vi.fn(),
-      prompt: vi.fn(),
-      userChoice: userPromptChoice
-    };
-
-    act(() => {
-      const event = new Event('beforeinstallprompt');
-      Object.assign(event, mockPromptEvent);
-      window.dispatchEvent(event);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('Add Recall to your homescreen?')).toBeInTheDocument();
-    });
-
-    const installBtn = screen.getByRole('button', { name: /Install/i });
-    act(() => {
-      installBtn.click();
-    });
-
-    await waitFor(() => {
-      expect(mockPromptEvent.prompt).toHaveBeenCalled();
-    });
+    expect(screen.getByText(/Recall\./i)).toBeInTheDocument();
   });
 
-  it('redirects unauthenticated users from /dashboard to /login', async () => {
-    vi.stubGlobal('location', { pathname: '/dashboard' });
+  it('redirects unauthenticated users to /login', async () => {
     const replaceSpy = vi.spyOn(window.history, 'replaceState');
 
     vi.spyOn(window, 'fetch').mockImplementation(() =>
@@ -130,15 +92,15 @@ describe('App PWA and Session Tracking', () => {
   });
 
   it('redirects authenticated users from /login to /dashboard', async () => {
-    vi.stubGlobal('location', { pathname: '/login' });
+    vi.stubGlobal('location', { pathname: '/login', search: '', hash: '' });
     const replaceSpy = vi.spyOn(window.history, 'replaceState');
 
     vi.spyOn(window, 'fetch').mockImplementation((url) => {
-      if (url === '/auth/me') {
+      if (url.includes('/me') || url.includes('/quizzes/stats')) {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({ id: 1, chat_id: '12345' }),
+          json: () => Promise.resolve({ id: 1, chat_id: '12345', streak_count: 5, total_saves: 10 }),
         });
       }
       return Promise.resolve({ ok: false });
@@ -159,4 +121,3 @@ describe('App PWA and Session Tracking', () => {
     vi.unstubAllGlobals();
   });
 });
-

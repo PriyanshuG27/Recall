@@ -9,7 +9,7 @@ All endpoints require bearerAuth or telegramInitData (applied via OpenAPI custom
 from datetime import date, datetime, timezone, timedelta
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Path, Query, Response, status, Depends, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, Path, Query, Response, status, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form, Request
 from pydantic import BaseModel, Field
 import psycopg
 
@@ -587,6 +587,61 @@ async def get_tag_portraits(
         rows = await cur.fetchall()
         
     return {row[0]: {"description": row[1], "icon": row[2]} for row in rows}
+
+@router.get(
+    "/items/{item_id}",
+    response_model=ItemResponse,
+    tags=["items"],
+    summary="Get a single item",
+    description="Retrieve a saved item by ID. Validates ownership to prevent IDOR.",
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse, "description": "Item not found."},
+    },
+)
+async def get_item(
+    item_id: int = Path(..., description="ID of the item to retrieve."),
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+):
+    """Retrieve a single saved item for the user."""
+    async with db.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT i.id, i.user_id, i.title, i.summary, i.source_type, i.source_url, i.tags, i.created_at, i.context_note,
+                   q.ease_factor, q.interval_days, q.next_review
+            FROM items i
+            LEFT JOIN quizzes q ON q.item_id = i.id AND q.user_id = i.user_id
+            WHERE i.id = %s AND i.user_id = %s;
+            """,
+            (item_id, user.id)
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Item not found"
+            )
+            
+        (
+            i_id, u_id, title, summary, source_type, source_url, tags, created_at, context_note,
+            ease_factor, interval_days, next_review
+        ) = row
+        
+        return {
+            "id": i_id,
+            "user_id": u_id,
+            "title": title,
+            "summary": summary,
+            "source_type": source_type,
+            "source_url": source_url,
+            "tags": tags,
+            "created_at": created_at,
+            "context_note": context_note,
+            "ease_factor": ease_factor,
+            "interval_days": interval_days,
+            "next_review": next_review
+        }
 
 @router.delete(
     "/items/{item_id}",
@@ -2256,6 +2311,43 @@ async def get_user_profile(
             "pulse_score": int(pulse_score) if pulse_score is not None else 0
         }
 
+@router.get(
+    "/pulse",
+    response_model=UserProfileResponse,
+    tags=["profile"],
+    summary="Get user mind portrait metrics and pulse score",
+    dependencies=[Depends(rate_limit("profile", 4))],
+)
+async def get_user_pulse(
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+):
+    """Retrieve user's mind portrait metrics and pulse score securely."""
+    async with db.cursor() as cur:
+        await cur.execute(
+            "SELECT self_description, mind_type, mind_type_summary, mind_type_trajectory, pulse_score FROM users WHERE id = %s;",
+            (user.id,)
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        self_desc, mind_type, summary, traj, pulse_score = row
+        traj_list = traj if traj else []
+        if isinstance(traj_list, str):
+            try:
+                traj_list = json.loads(traj_list)
+            except Exception:
+                traj_list = []
+                
+        return {
+            "self_description": self_desc,
+            "mind_type": mind_type,
+            "mind_type_summary": summary,
+            "mind_type_trajectory": traj_list,
+            "pulse_score": int(pulse_score) if pulse_score is not None else 0
+        }
+
 @router.post(
     "/user/profile/detailed",
     response_model=DetailedProfileResponse,
@@ -2706,4 +2798,57 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(user_id, websocket)
     except Exception:
         manager.disconnect(user_id, websocket)
+
+
+@router.post(
+    "/share-target",
+    summary="Handle PWA Web Share Target POST",
+    description="Receives native mobile share target form data (title, text, url) and triggers ingestion.",
+)
+async def handle_pwa_share_target(
+    request: Request,
+    title: Optional[str] = Form(None),
+    text: Optional[str] = Form(None),
+    url: Optional[str] = Form(None),
+    user: UserContext = Depends(get_current_user),
+    db: psycopg.AsyncConnection = Depends(get_db),
+    background_tasks: BackgroundTasks = None
+):
+    """Processes content shared to the PWA natively from mobile OS Share Sheet."""
+    import re
+    from fastapi.responses import RedirectResponse
+    
+    combined_raw = f"{title or ''} {text or ''} {url or ''}".strip()
+    if not combined_raw:
+        return RedirectResponse(url="/archive?status=error_empty", status_code=303)
+        
+    # Extract URL using regex
+    url_pattern = re.compile(r'https?://[^\s]+')
+    match = url_pattern.search(combined_raw)
+    
+    if match:
+        extracted_url = match.group(0)
+        source_type = "url"
+        context_note = combined_raw.replace(extracted_url, "").strip() or None
+        raw_text = extracted_url
+    else:
+        source_type = "text"
+        context_note = None
+        raw_text = combined_raw
+        
+    item_req = ItemCreateRequest(
+        url=extracted_url if match else None,
+        title=title or None,
+        raw_text=combined_raw if not match else None,
+        source_type=source_type
+    )
+    
+    try:
+        dummy_res = Response()
+        await create_item(item_req, response=dummy_res, user=user, db=db)
+    except Exception as e:
+        logger.error("Failed to process PWA share target for user %d: %s", user.id, e)
+        return RedirectResponse(url="/archive?status=share_failed", status_code=303)
+        
+    return RedirectResponse(url="/archive?status=shared_success", status_code=303)
 

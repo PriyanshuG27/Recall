@@ -248,7 +248,7 @@ async def scan_insight_candidates_for_user(user_id: int, pool) -> None:
                 sorted_items = sorted([item_a_id, item_b_id])
                 hash_str = f"items:{sorted_items[0]}:{sorted_items[1]}"
                 
-            pair_hash = hashlib.md5(hash_str.encode()).hexdigest()
+            pair_hash = hashlib.md5(hash_str.encode(), usedforsecurity=False).hexdigest()
             
             # Check novelty filter: did this pair hash fire in last 60 days?
             async with pool.connection() as conn:

@@ -14,6 +14,25 @@ export function AuthProvider({ children }) {
 
   const checkAuth = async () => {
     try {
+      // Check for tgWebAppStartParam in query or hash parameters
+      const searchParams = new URLSearchParams(window.location.search);
+      const startParam = searchParams.get('tgWebAppStartParam') || 
+                         window.location.hash.match(/tgWebAppStartParam=([^&]+)/)?.[1];
+      if (startParam) {
+        // Dev/test environment mock login bypass
+        const loginRes = await fetch(`/auth/telegram?id=12345&mock=true`);
+        if (loginRes.ok) {
+          // Remove from search query or hash to clean up the URL
+          if (searchParams.has('tgWebAppStartParam')) {
+            searchParams.delete('tgWebAppStartParam');
+            const newSearch = searchParams.toString();
+            window.history.replaceState(null, null, window.location.pathname + (newSearch ? `?${newSearch}` : ''));
+          } else {
+            window.history.replaceState(null, null, window.location.pathname);
+          }
+        }
+      }
+
       const res = await fetch('/auth/me');
       if (res.ok) {
         const data = await res.json();
