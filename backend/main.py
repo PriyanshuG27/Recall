@@ -61,7 +61,7 @@ class SecretMaskingFilter(logging.Filter):
                         secrets.append(match.group(1))
                 
                 # Mask other optional API keys/secrets
-                for key in ["MODAL_API_TOKEN", "GROQ_API_KEY", "GEMINI_API_KEY", "ZENROWS_KEY", "SCRAPINGBEE_KEY", "SCRAPERAPI_KEY"]:
+                for key in ["MODAL_API_TOKEN", "GROQ_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "NVIDIA_API_KEY"]:
                     val = getattr(settings, key, None)
                     if val:
                         secrets.append(val)

@@ -32,7 +32,6 @@ Managed in `backend/config.py` using Pydantic `BaseSettings`.
 * `INTERNAL_API_KEY`: Admin queue header key (`X-Internal-Key`).
 * `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`: Google OAuth credentials.
 * `VITE_API_URL`, `VITE_BOT_USERNAME`: Frontend environment configuration references.
-* `ZENROWS_KEY`, `SCRAPINGBEE_KEY`, `SCRAPERAPI_KEY`: Scraping proxy keys.
 * `HF_TOKEN`: HuggingFace inference token.
 * `COBALT_API_URL`: Cobalt video metadata scraping instance URL.
 * `BROWSER_FOR_COOKIES`, `IG_COOKIES_B64`: Cookie scraping options.

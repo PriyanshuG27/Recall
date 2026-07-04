@@ -36,14 +36,12 @@ async def test_worker_process_task_text_flow():
          mock.patch("backend.worker.AICascade") as mock_cascade_cls:
         
         mock_cascade = mock.MagicMock()
-        mock_cascade.summarise = mock.AsyncMock(return_value={"summary": "sum", "context_prompt": "prompt?"})
-        mock_cascade_cls.return_value = mock_cascade
-
         conn = mock.MagicMock()
         conn.execute = mock.AsyncMock()
         conn.commit = mock.AsyncMock()
         cursor = mock.AsyncMock()
-        cursor.fetchone.side_effect = [None, (101,), (101,)]
+        from datetime import datetime
+        cursor.fetchone.return_value = (101, datetime.now(), "summary")
         conn.cursor.return_value.__aenter__.return_value = cursor
         mock_pool.connection.return_value.__aenter__.return_value = conn
         

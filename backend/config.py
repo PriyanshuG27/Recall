@@ -37,10 +37,6 @@ class Settings(BaseSettings):
     
     VITE_API_URL: str | None = None
     VITE_BOT_USERNAME: str | None = None
-    
-    ZENROWS_KEY: str | None = None
-    SCRAPINGBEE_KEY: str | None = None
-    SCRAPERAPI_KEY: str | None = None
     HF_TOKEN: str | None = None
     COBALT_API_URL: str | None = None
     BROWSER_FOR_COOKIES: str | None = None
