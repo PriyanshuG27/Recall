@@ -36,7 +36,7 @@ def get_paddle_client():
         try:
             # Instantiate with silent logging to prevent stdout pollution
             _paddle_client = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
-        except TypeError:
+        except Exception:
             _paddle_client = PaddleOCR(use_angle_cls=True, lang="en")
     return _paddle_client
 
@@ -90,19 +90,25 @@ def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
     try:
         ocr_client = get_paddle_client()
         img_np = np.array(image)
-        
-        # PaddleOCR expects grayscale (H, W) or BGR (H, W, 3)
+        # Ensure image has 3 channels (BGR) to prevent indexing crashes inside PaddleOCR
+        if len(img_np.shape) == 2:
+            img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
+        elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
+            img_np = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+            
         result = ocr_client.ocr(img_np)
         
-        if result and result[0]:
+        if isinstance(result, list) and len(result) > 0 and result[0]:
             for line in result[0]:
-                if line and len(line) > 1 and line[1]:
-                    text = line[1][0]
-                    conf = line[1][1]
-                    if conf >= 0.60 and text.strip():
-                        # Split detected line into individual words
-                        words = text.strip().split()
-                        high_conf_words.extend(words)
+                if isinstance(line, (list, tuple)) and len(line) > 1:
+                    info = line[1]
+                    if isinstance(info, (list, tuple)) and len(info) > 1:
+                        text = info[0]
+                        conf = info[1]
+                        if isinstance(text, str) and isinstance(conf, (int, float)):
+                            if conf >= 0.60 and text.strip():
+                                words = text.strip().split()
+                                high_conf_words.extend(words)
     except Exception as ocr_err:
         logger.error("In-memory PaddleOCR execution failed: %s", ocr_err)
         
