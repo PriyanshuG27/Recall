@@ -77,14 +77,14 @@ class MockPool:
 
 @pytest.mark.asyncio
 async def test_digest_scheduler_registration():
-    """Verify that starting the scheduler registers daily_digest_sender with misfire_grace_time=3600."""
+    """Verify that starting the scheduler registers daily_digest_sender with misfire_grace_time=60."""
     try:
         await start_scheduler()
         assert scheduler_module._scheduler is not None
         
         job = scheduler_module._scheduler.get_job("daily_digest_sender")
         assert job is not None
-        assert job.misfire_grace_time == 3600
+        assert job.misfire_grace_time == 60
         
         # Verify CronTrigger runs hourly
         assert isinstance(job.trigger, CronTrigger)

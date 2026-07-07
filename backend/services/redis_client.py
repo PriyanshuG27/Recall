@@ -42,7 +42,7 @@ class UpstashRedis:
             return msg.replace(settings.UPSTASH_REDIS_REST_TOKEN, "<REDACTED>")
         return msg
 
-    async def _request(self, endpoint: str, json_data) -> dict | list:
+    async def _request(self, endpoint: str, json_data, timeout: Optional[float] = None) -> dict | list:
         client = self._get_client()
         import sys
         from unittest.mock import Mock
@@ -78,7 +78,7 @@ class UpstashRedis:
             return {"result": None}
 
         try:
-            resp = await client.post(endpoint, json=json_data)
+            resp = await client.post(endpoint, json=json_data, timeout=timeout)
             resp.raise_for_status()
             return resp.json()
         except httpx.TimeoutException as e:
@@ -95,7 +95,7 @@ class UpstashRedis:
                 logger.warning("Upstash Redis 5xx error (HTTP %d), retrying in 1s...", status_code)
                 await asyncio.sleep(1.0)
                 try:
-                    resp = await client.post(endpoint, json=json_data)
+                    resp = await client.post(endpoint, json=json_data, timeout=timeout)
                     resp.raise_for_status()
                     return resp.json()
                 except Exception as retry_err:
@@ -125,7 +125,7 @@ class UpstashRedis:
         Blocks and pops a value from the tail of a list.
         Returns a tuple of (key, value) or None if timeout is reached.
         """
-        data = await self._request("", ["BRPOP", key, str(timeout)])
+        data = await self._request("", ["BRPOP", key, str(timeout)], timeout=float(timeout + 5))
         if isinstance(data, dict):
             if "error" in data:
                 raise RedisUnavailableError(self._redact(data["error"]))
@@ -238,7 +238,7 @@ class UpstashRedis:
         Blocking pop from source and push to destination.
         Returns the popped element or None if timeout is reached.
         """
-        data = await self._request("", ["BRPOPLPUSH", source, destination, str(timeout)])
+        data = await self._request("", ["BRPOPLPUSH", source, destination, str(timeout)], timeout=float(timeout + 5))
         if isinstance(data, dict) and "error" in data:
             raise RedisUnavailableError(self._redact(data["error"]))
         return data.get("result")

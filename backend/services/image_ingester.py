@@ -14,7 +14,7 @@ from psycopg import AsyncConnection
 from backend.config import settings
 from backend.services.encryption import encrypt
 from backend.services.search_service import embed_text
-from backend.services.ai_cascade import AICascade
+from backend.services.ai_cascade import AICascade, ai_cascade
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ async def ingest_image(file_id: str, user_id: int, chat_id: str, db: AsyncConnec
             summarizer_input = ocr_text
             if user_context:
                 summarizer_input = f"[User's Note/Context: {user_context}]\n" + ocr_text
-            ai_res = await cascade.summarise(summarizer_input, chat_id)
+            ai_res = await cascade.summarise(summarizer_input, chat_id=chat_id, user_id=user_id)
             summary = ai_res.get("summary") or f"OCR summary: {ocr_text[:100]}..."
             tags = ai_res.get("tags") or ["image", "ocr"]
             context_prompt = ai_res.get("context_prompt")
@@ -167,7 +167,7 @@ async def ingest_image(file_id: str, user_id: int, chat_id: str, db: AsyncConnec
                 raw_text += f"\n[User's Note/Context: {user_context}]"
             
             if user_context:
-                ai_res = await cascade.summarise(f"[User's Note/Context: {user_context}]\nImage Caption: {caption}", chat_id)
+                ai_res = await cascade.summarise(f"[User's Note/Context: {user_context}]\nImage Caption: {caption}", chat_id=chat_id, user_id=user_id)
                 summary = ai_res.get("summary") or caption
                 tags = ai_res.get("tags") or ["image", "caption"]
                 context_prompt = ai_res.get("context_prompt")

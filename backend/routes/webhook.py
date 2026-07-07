@@ -188,6 +188,16 @@ async def telegram_webhook(
     FastAPI webhook handler for Telegram Bot updates.
     Enforces idempotency, parses message type, pushes tasks, and responds in < 50ms.
     """
+    import hmac
+    from fastapi import HTTPException
+    
+    token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    webhook_secret = settings.TELEGRAM_WEBHOOK_SECRET
+    if webhook_secret:
+        if not token or not hmac.compare_digest(token, webhook_secret):
+            logger.warning("Telegram webhook received unauthorized request (invalid or missing secret token).")
+            raise HTTPException(status_code=403, detail="Unauthorized")
+
     start_time = time.perf_counter()
     base_url = str(request.base_url).rstrip("/")
     try:
@@ -1248,7 +1258,7 @@ async def telegram_webhook(
                             # Generate synthesised RAG answer if results count >= 3
                             answer = None
                             if len(results_limited) >= 3:
-                                from backend.services.ai_cascade import AICascade
+                                from backend.services.ai_cascade import AICascade, ai_cascade
                                 cascade = AICascade()
                                 try:
                                     summaries = [r["summary"] or "" for r in results_limited]
@@ -1812,11 +1822,13 @@ async def telegram_webhook(
                 "timestamp": time.time(),
                 "message_id": message.get("message_id")
             }
-            # Add payload to batch list in Redis
-            batch_len = await redis.rpush(f"batch:{chat_id}", json.dumps(item_payload))
-            
+            # Add payload and update last active time in Redis atomically via pipeline
             expected_time = str(time.time())
-            await redis.setex(f"batch_last:{chat_id}", 60, expected_time)
+            pipeline_res = await redis.pipeline([
+                ["RPUSH", f"batch:{chat_id}", json.dumps(item_payload)],
+                ["SETEX", f"batch_last:{chat_id}", "60", expected_time]
+            ])
+            batch_len = int(pipeline_res[0])
             
             background_tasks.add_task(wait_and_process_batch, chat_id, user_id, expected_time)
             
@@ -1903,7 +1915,7 @@ async def process_quiz_me_callback(chat_id: str, user_id: int, item_id: int, cal
                     text_for_quiz = summary or text_content or title or ""
 
                     # 3. Call AICascade to generate quiz
-                    from backend.services.ai_cascade import AICascade
+                    from backend.services.ai_cascade import AICascade, ai_cascade
                     cascade = AICascade()
                     try:
                         quiz_data = await cascade.generate_quiz(text_for_quiz)
@@ -2280,7 +2292,7 @@ async def trigger_first_session_magic(chat_id: str, user_id: int, base_url: str 
         if best_pair and best_sim >= 0.68:
             item_a, item_b = best_pair
             
-            from backend.services.ai_cascade import AICascade
+            from backend.services.ai_cascade import AICascade, ai_cascade
             cascade = AICascade()
             cascade._force_production_llm = True
             
@@ -2347,10 +2359,13 @@ async def wait_and_process_batch(chat_id: str, user_id: int, expected_time: str)
     if last_time != expected_time:
         return
 
-    # Process the batch
-    raw_items = await redis.lrange(f"batch:{chat_id}", 0, -1)
-    await redis.delete(f"batch:{chat_id}")
-    await redis.delete(f"batch_last:{chat_id}")
+    # Fetch items and clean up the keys in Redis in a single pipelined request
+    pipeline_res = await redis.pipeline([
+        ["LRANGE", f"batch:{chat_id}", "0", "-1"],
+        ["DEL", f"batch:{chat_id}"],
+        ["DEL", f"batch_last:{chat_id}"]
+    ])
+    raw_items = pipeline_res[0]
 
     if not raw_items:
         return
@@ -2381,7 +2396,7 @@ async def handle_conversational_rag(
     """
     try:
         from backend.services.search_service import rag_semantic_search
-        from backend.services.ai_cascade import AICascade, check_prompt_injection
+        from backend.services.ai_cascade import AICascade, ai_cascade, check_prompt_injection
 
         # Check for query injection first
         injection_warning = check_prompt_injection(query)

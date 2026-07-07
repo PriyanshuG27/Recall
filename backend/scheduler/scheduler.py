@@ -2663,8 +2663,7 @@ async def tick_hearth_shared_days() -> None:
     misfire_grace_time=60 ensures the job won't be skipped if the server is
     briefly down at midnight.
     """
-    from datetime import date, timedelta
-    yesterday = (datetime.utcnow() - timedelta(days=1)).date()
+    yesterday = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).date()
 
     pool = await get_pool()
     try:
@@ -2724,10 +2723,10 @@ async def start_scheduler(app=None) -> None:
 
     _scheduler = AsyncIOScheduler()
     
-    # 1. reminders_dispatcher (every 1 minute)
+    # 1. reminders_dispatcher (every 5 minutes)
     _scheduler.add_job(
         reminders_dispatcher,
-        trigger=IntervalTrigger(minutes=1),
+        trigger=IntervalTrigger(minutes=5),
         id="reminders_dispatcher",
         misfire_grace_time=60
     )
@@ -2769,7 +2768,7 @@ async def start_scheduler(app=None) -> None:
         daily_digest_sender,
         trigger=CronTrigger(hour="*", minute=0, timezone="UTC"),
         id="daily_digest_sender",
-        misfire_grace_time=3600
+        misfire_grace_time=60
     )
     
     # 7. weekly_drive_sync (weekly on Sunday at 04:00 UTC)

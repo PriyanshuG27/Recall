@@ -13,7 +13,7 @@ from psycopg import AsyncConnection
 
 from backend.services.encryption import encrypt
 from backend.services.search_service import embed_text
-from backend.services.ai_cascade import AICascade
+from backend.services.ai_cascade import AICascade, ai_cascade
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ async def ingest_youtube(url: str, user_id: int, db: AsyncConnection, user_conte
             if user_context:
                 summarizer_input = f"[User's Note/Context: {user_context}]\n" + transcript
             cascade = AICascade()
-            ai_res = await cascade.summarise(summarizer_input)
+            ai_res = await cascade.summarise(summarizer_input, user_id=user_id)
             summary = ai_res.get("summary") or f"Summary of video: {transcript[:200]}..."
             tags = ai_res.get("tags") or ["youtube"]
             context_prompt = ai_res.get("context_prompt")
@@ -578,7 +578,7 @@ async def ingest_instagram(url: str, user_id: int, db: AsyncConnection, user_con
                 summarizer_input += f"Video Description/Caption: {video_description}\n"
             summarizer_input += f"Audio Transcript:\n{transcript}"
             
-            ai_res = await cascade.summarise(summarizer_input)
+            ai_res = await cascade.summarise(summarizer_input, user_id=user_id)
             summary = ai_res.get("summary") or f"Instagram Reel: {transcript[:200]}..."
             tags = ai_res.get("tags") or ["instagram", "reel"]
             context_prompt = ai_res.get("context_prompt")
@@ -650,7 +650,7 @@ async def ingest_instagram(url: str, user_id: int, db: AsyncConnection, user_con
                 if video_description:
                     summarizer_input += f"Video Description/Caption: {video_description}\n"
                 
-                ai_res = await cascade.summarise(summarizer_input)
+                ai_res = await cascade.summarise(summarizer_input, user_id=user_id)
                 summary = ai_res.get("summary") or f"Instagram Reel (Metadata): {video_description[:200] if video_description else ''}"
                 tags = ai_res.get("tags") or ["instagram", "reel"]
                 context_prompt = ai_res.get("context_prompt")

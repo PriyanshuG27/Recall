@@ -15,7 +15,7 @@ from backend.config import settings
 from backend.exceptions import DuplicateItemException
 from backend.services.encryption import encrypt
 from backend.services.search_service import embed_text
-from backend.services.ai_cascade import AICascade
+from backend.services.ai_cascade import AICascade, ai_cascade
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ async def ingest_voice(file_id: str, user_id: int, chat_id: str, db: AsyncConnec
         summarizer_input = transcript
         if user_context:
             summarizer_input = f"[User's Note/Context: {user_context}]\n" + transcript
-        ai_res = await cascade.summarise(summarizer_input, chat_id)
+        ai_res = await cascade.summarise(summarizer_input, chat_id=chat_id, user_id=user_id)
         summary = ai_res.get("summary") or f"Transcription summary for voice note: {transcript[:100]}..."
         tags = ai_res.get("tags") or ["voice"]
         context_prompt = ai_res.get("context_prompt")

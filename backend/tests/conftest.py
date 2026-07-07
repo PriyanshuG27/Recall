@@ -69,3 +69,14 @@ def reset_http_client_cache():
     import backend.services.http_client as hc
     hc._client = None
     hc._loop_bound = None
+
+
+@pytest.fixture(autouse=True)
+def reset_ai_cascade_singleton():
+    """
+    Resets the shared AICascade singleton force_production_llm state
+    between test executions to prevent test pollution.
+    """
+    from backend.services.ai_cascade import AICascade
+    cascade = AICascade()
+    cascade._force_production_llm = False

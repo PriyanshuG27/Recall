@@ -331,15 +331,14 @@ async def test_xml_shielding_formatting():
     cascade = AICascade()
     cascade._force_production_llm = True
     
-    with mock.patch("backend.services.ai_cascade.settings.COMPUTE_PROVIDER", None), \
-         mock.patch("backend.services.ai_cascade.settings.OPENROUTER_API_KEY", "mock_key"), \
-         mock.patch("backend.services.ai_cascade.AICascade._call_openrouter_rag", new_callable=mock.AsyncMock) as mock_openrouter:
+    with mock.patch("backend.services.ai_cascade.executor.retry.RetryEngine.execute_with_retry", new_callable=mock.AsyncMock) as mock_retry:
          
-        mock_openrouter.return_value = "Mock answer"
+        mock_retry.return_value = "Mock answer"
         await cascade.answer_question("What is stoicism?", ["Stoicism summary"])
         
-        mock_openrouter.assert_called_once()
-        called_prompt = mock_openrouter.call_args[0][0]
+        mock_retry.assert_called_once()
+        called_messages = mock_retry.call_args[1]["messages"]
+        called_prompt = called_messages[1]["content"]
         assert "<user_query>" in called_prompt
         assert "</user_query>" in called_prompt
         assert "<retrieved_context>" in called_prompt
@@ -352,47 +351,51 @@ async def test_cascade_failover_logic():
     cascade = AICascade()
     cascade._force_production_llm = True
     
+    from backend.services.ai_cascade.providers.openrouter import OpenRouterProvider
+    from backend.services.ai_cascade.providers.nvidia import NvidiaProvider
+    from backend.services.ai_cascade.providers.gemini import GeminiProvider
+
     with mock.patch("backend.services.ai_cascade.settings.COMPUTE_PROVIDER", None), \
          mock.patch("backend.services.ai_cascade.settings.OPENROUTER_API_KEY", "openrouter_key"), \
          mock.patch("backend.services.ai_cascade.settings.NVIDIA_API_KEY", "nvidia_key"), \
          mock.patch("backend.services.ai_cascade.settings.GEMINI_API_KEY", "gemini_key"), \
-         mock.patch("backend.services.ai_cascade.AICascade._call_openrouter_rag", new_callable=mock.AsyncMock) as mock_openrouter, \
-         mock.patch("backend.services.ai_cascade.AICascade._call_nvidia_rag", new_callable=mock.AsyncMock) as mock_nvidia, \
-         mock.patch("backend.services.ai_cascade.AICascade._call_gemini_llm", new_callable=mock.AsyncMock) as mock_gemini:
+         mock.patch.object(OpenRouterProvider, "chat_completion", new_callable=mock.AsyncMock) as mock_openrouter, \
+         mock.patch.object(NvidiaProvider, "chat_completion", new_callable=mock.AsyncMock) as mock_nvidia, \
+         mock.patch.object(GeminiProvider, "chat_completion", new_callable=mock.AsyncMock) as mock_gemini:
          
-        # Case 1: OpenRouter succeeds
-        mock_openrouter.return_value = "OpenRouter response"
-        res = await cascade.answer_question("test query", ["context"])
-        assert res == "OpenRouter response"
-        mock_openrouter.assert_called_once()
-        mock_nvidia.assert_not_called()
-        mock_gemini.assert_not_called()
-        
-        # Reset mocks
-        mock_openrouter.reset_mock()
-        mock_nvidia.reset_mock()
-        mock_gemini.reset_mock()
-        
-        # Case 2: OpenRouter fails, Nvidia succeeds
-        mock_openrouter.return_value = None
+        # Case 1: Nvidia (first in pipelines.yaml) succeeds
         mock_nvidia.return_value = "Nvidia response"
         res = await cascade.answer_question("test query", ["context"])
         assert res == "Nvidia response"
-        mock_openrouter.assert_called_once()
         mock_nvidia.assert_called_once()
         mock_gemini.assert_not_called()
+        mock_openrouter.assert_not_called()
         
         # Reset mocks
         mock_openrouter.reset_mock()
         mock_nvidia.reset_mock()
         mock_gemini.reset_mock()
         
-        # Case 3: OpenRouter and Nvidia fail, Gemini succeeds
-        mock_openrouter.return_value = None
+        # Case 2: Nvidia fails, Gemini succeeds
         mock_nvidia.return_value = None
         mock_gemini.return_value = "Gemini response"
         res = await cascade.answer_question("test query", ["context"])
         assert res == "Gemini response"
-        mock_openrouter.assert_called_once()
-        mock_nvidia.assert_called_once()
+        assert mock_nvidia.call_count == 6
         mock_gemini.assert_called_once()
+        mock_openrouter.assert_not_called()
+        
+        # Reset mocks
+        mock_openrouter.reset_mock()
+        mock_nvidia.reset_mock()
+        mock_gemini.reset_mock()
+        
+        # Case 3: Nvidia and Gemini fail, OpenRouter succeeds
+        mock_nvidia.return_value = None
+        mock_gemini.return_value = None
+        mock_openrouter.return_value = "OpenRouter response"
+        res = await cascade.answer_question("test query", ["context"])
+        assert res == "OpenRouter response"
+        assert mock_nvidia.call_count == 6
+        assert mock_gemini.call_count == 2
+        mock_openrouter.assert_called_once()

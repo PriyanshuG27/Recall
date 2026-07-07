@@ -459,7 +459,7 @@ function App() {
       </main>
 
 
-      <ChatDrawer 
+      {currentRoom !== 'hearth' && <ChatDrawer 
         isOpen={assistantOpen} 
         onOpen={() => setAssistantOpen(true)} 
         onClose={() => setAssistantOpen(false)} 
@@ -482,7 +482,7 @@ function App() {
             handleNavigate('map');
           }
         }}
-      />
+      />}
 
       {/* Cmd+K search */}
       {searchOpen && (

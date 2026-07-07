@@ -1,0 +1,52 @@
+pipelines:
+  summary:
+    cache: true
+    validator: "SummaryValidator"
+    schema: "summary.json"
+    providers:
+      - groq
+      - nvidia
+      - cerebras
+      - gemini
+      - openrouter
+  rag:
+    cache: true
+    validator: "RAGValidator"
+    schema: "rag.json"
+    providers:
+      - nvidia
+      - gemini
+      - openrouter
+  quiz:
+    cache: true
+    validator: "QuizValidator"
+    schema: "quiz.json"
+    providers:
+      - groq
+      - nvidia
+      - gemini
+      - openrouter
+  ocr:
+    cache: true
+    validator: "OCRValidator"
+    schema: "ocr.json"
+    providers:
+      - gemini
+      - nvidia
+  insight:
+    cache: true
+    validator: "InsightValidator"
+    schema: "insight.json"
+    providers:
+      - nvidia
+      - cerebras
+      - gemini
+      - openrouter
+  transcription:
+    cache: true
+    validator: "TranscriptionValidator"
+    schema: "transcription.json"
+    providers:
+      - groq
+      - gemini
+      - modal

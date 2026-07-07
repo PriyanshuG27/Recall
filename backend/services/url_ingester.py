@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from psycopg import AsyncConnection
 from backend.services.encryption import encrypt
 from backend.services.search_service import embed_text
-from backend.services.ai_cascade import AICascade
+from backend.services.ai_cascade import AICascade, ai_cascade
 
 import asyncio
 import re
@@ -297,7 +297,7 @@ async def ingest_url(url: str, user_id: int, db: AsyncConnection, user_context: 
         summarizer_input = raw_text
         if user_context:
             summarizer_input = f"[User's Note/Context: {user_context}]\n" + raw_text
-        ai_res = await cascade.summarise(summarizer_input)
+        ai_res = await cascade.summarise(summarizer_input, user_id=user_id)
         summary = ai_res.get("summary") or summary
         tags = ai_res.get("tags") or tags
         context_prompt = ai_res.get("context_prompt")

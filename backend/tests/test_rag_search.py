@@ -172,19 +172,17 @@ async def test_token_truncation_limits_characters():
     long_summaries = ["This is a long summary. " * 500] * 5  # Total ~60,000 characters
     
     # Verify it doesn't crash and truncates long summaries correctly
-    with mock.patch("backend.services.ai_cascade.AICascade._call_modal_rag", new_callable=mock.AsyncMock) as mock_modal:
-        mock_modal.return_value = "Synthesised answer"
-        # Pinned to modal to make call
-        with mock.patch("backend.services.ai_cascade.settings.MODAL_API_TOKEN", "mock_token"), \
-             mock.patch("backend.services.ai_cascade.settings.COMPUTE_PROVIDER", "modal"), \
-             mock.patch("backend.services.ai_cascade.settings.ENV", "production"):
+    with mock.patch("backend.services.ai_cascade.executor.retry.RetryEngine.execute_with_retry", new_callable=mock.AsyncMock) as mock_retry:
+        mock_retry.return_value = "Synthesised answer"
+        with mock.patch("backend.services.ai_cascade.settings.ENV", "production"):
             
             cascade._force_production_llm = True
             res = await cascade.answer_question("What is AI?", long_summaries)
             assert res == "Synthesised answer"
             
-            mock_modal.assert_called_once()
-            called_prompt = mock_modal.call_args[0][0]
+            mock_retry.assert_called_once()
+            called_messages = mock_retry.call_args[1]["messages"]
+            called_prompt = called_messages[1]["content"]
             # Prompt must be capped to around 12,000 characters
             assert len(called_prompt) <= 12000
 

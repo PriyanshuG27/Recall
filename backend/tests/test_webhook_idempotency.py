@@ -123,7 +123,22 @@ def override_db(db_state):
 @pytest.fixture(autouse=True)
 def mock_redis():
     with mock.patch("backend.routes.webhook.redis", new_callable=mock.AsyncMock) as m:
-        m.rpush.return_value = 1
+        async def dynamic_pipeline(cmds):
+            results = []
+            for cmd in cmds:
+                name = cmd[0].upper()
+                if name == "RPUSH":
+                    results.append(1)
+                elif name == "SETEX":
+                    results.append(True)
+                elif name == "LRANGE":
+                    results.append([])
+                elif name == "DEL":
+                    results.append(1)
+                else:
+                    results.append(None)
+            return results
+        m.pipeline.side_effect = dynamic_pipeline
         m.get.return_value = None
         m.setex.return_value = True
         yield m
@@ -185,10 +200,11 @@ def test_first_delivery(client, db_state, mock_redis, mock_telegram_ack):
     assert "111" in db_state.processed
     
     # Verify task enqueued in Redis
-    assert mock_redis.rpush.call_count == 1
-    call_args = mock_redis.rpush.call_args[0]
-    assert call_args[0] == "batch:12345"
-    task_payload = json.loads(call_args[1])
+    assert mock_redis.pipeline.call_count == 1
+    pipeline_cmds = mock_redis.pipeline.call_args[0][0]
+    assert pipeline_cmds[0][0] == "RPUSH"
+    assert pipeline_cmds[0][1] == "batch:12345"
+    task_payload = json.loads(pipeline_cmds[0][2])
     assert task_payload["update_id"] == "111"
     assert task_payload["content_type"] == "text"
     assert task_payload["text"] == "Hello world"
@@ -214,7 +230,7 @@ def test_duplicate_delivery(client, db_state, mock_redis, mock_telegram_ack):
     assert response.json() == {"status": "ok", "detail": "duplicate"}
     
     # No Redis LPUSH and no Telegram ACK
-    assert mock_redis.rpush.call_count == 0
+    assert mock_redis.pipeline.call_count == 0
     assert mock_telegram_ack.call_count == 0
 
 
@@ -231,7 +247,7 @@ def test_different_update_id(client, db_state, mock_redis, mock_telegram_ack):
     assert "111" in db_state.processed
     assert "112" in db_state.processed
     
-    assert mock_redis.rpush.call_count == 2
+    assert mock_redis.pipeline.call_count == 2
     assert mock_telegram_ack.call_count == 2
 
 
@@ -262,7 +278,7 @@ async def test_concurrent_duplicates(db_state, mock_redis, mock_telegram_ack):
     assert len(db_state.processed) == 1
     
     # Only one task enqueued and one ACK sent
-    assert mock_redis.rpush.call_count == 1
+    assert mock_redis.pipeline.call_count == 1
     assert mock_telegram_ack.call_count == 1
 
 
@@ -289,12 +305,13 @@ def test_content_type_ack_mapping(client, mock_redis, mock_telegram_ack, message
     
     # Verify task content type in Redis push (only if supported)
     if expected_type == "unsupported":
-        assert mock_redis.rpush.call_count == 0
+        assert mock_redis.pipeline.call_count == 0
     else:
-        assert mock_redis.rpush.call_count == 1
-        call_args = mock_redis.rpush.call_args[0]
-        assert call_args[0] == "batch:12345"
-        task_payload = json.loads(call_args[1])
+        assert mock_redis.pipeline.call_count == 1
+        pipeline_cmds = mock_redis.pipeline.call_args[0][0]
+        assert pipeline_cmds[0][0] == "RPUSH"
+        assert pipeline_cmds[0][1] == "batch:12345"
+        task_payload = json.loads(pipeline_cmds[0][2])
         assert task_payload["content_type"] == expected_type
     
     # Verify Telegram ACK string
@@ -315,7 +332,7 @@ def test_webhook_start_command(client, db_state, mock_redis, mock_telegram_ack):
     assert db_state.users["77777"] == 1
     
     # Redis push should not happen for /start command
-    assert mock_redis.rpush.call_count == 0
+    assert mock_redis.pipeline.call_count == 0
     
     # Welcome ACK message sent to user
     welcome_msg = (
@@ -338,5 +355,5 @@ def test_webhook_rate_limit_exceeded(client, mock_redis, mock_telegram_ack):
         assert response.json() == {"status": "ok", "detail": "rate_limited"}
         
         # Verify no task queued and no ACK sent
-        assert mock_redis.rpush.call_count == 0
+        assert mock_redis.pipeline.call_count == 0
         assert mock_telegram_ack.call_count == 0

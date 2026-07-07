@@ -28,8 +28,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
     OPENROUTER_API_KEY: str | None = None
     NVIDIA_API_KEY: str | None = None
+    CEREBRAS_API_KEY: str | None = None
     COMPUTE_PROVIDER: str | None = None
     INTERNAL_API_KEY: str | None = "dev_internal_api_key"
+    TELEGRAM_WEBHOOK_SECRET: str | None = None
     
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_CLIENT_SECRET: str | None = None
@@ -98,7 +100,7 @@ class Settings(BaseSettings):
         except Exception as e:
             raise ValueError(f"FERNET_KEY must be valid URL-safe base64 (32 bytes decoded): {e}")
 
-        # 2. Validate JWT_SECRET (must be at least 32 hex characters)
+        # 2. Validate JWT_SECRET (must be at least 32 characters long.)
         if len(self.JWT_SECRET) < 32:
             raise ValueError("JWT_SECRET must be at least 32 characters long.")
         if not re.match(r"^[0-9a-fA-F]+$", self.JWT_SECRET):

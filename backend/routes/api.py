@@ -171,7 +171,7 @@ async def create_item(
 ):
     """Save a new item and auto-generate summary and tags."""
     from datetime import datetime, timezone
-    from backend.services.ai_cascade import AICascade
+    from backend.services.ai_cascade import AICascade, ai_cascade
     from backend.services.search_service import embed_text
     from backend.services.encryption import encrypt
 
@@ -351,7 +351,7 @@ async def extension_suggest_tags(
     user: UserContext = Depends(get_current_user),
     db: psycopg.AsyncConnection = Depends(get_db),
 ):
-    from backend.services.ai_cascade import AICascade
+    from backend.services.ai_cascade import AICascade, ai_cascade
     cascade = AICascade()
     content = text or title or ""
     
@@ -431,7 +431,7 @@ async def extension_save(
     db: psycopg.AsyncConnection = Depends(get_db),
 ):
     from datetime import datetime, timezone
-    from backend.services.ai_cascade import AICascade
+    from backend.services.ai_cascade import AICascade, ai_cascade
     from backend.services.search_service import embed_text
     from backend.services.encryption import encrypt
 
@@ -740,7 +740,7 @@ async def search_items(
 ):
     """Search items and run Map-Reduce RAG if applicable."""
     from backend.services.search_service import hybrid_search
-    from backend.services.ai_cascade import AICascade, check_prompt_injection
+    from backend.services.ai_cascade import AICascade, ai_cascade, check_prompt_injection
 
     injection_warning = check_prompt_injection(req.query)
     if injection_warning:
@@ -2270,7 +2270,7 @@ async def get_user_profile(
                     hubs = [r[0] for r in await cur.fetchall()]
                     hubs_str = ", ".join(hubs) if hubs else "general topics"
                     
-                    from backend.services.ai_cascade import AICascade
+                    from backend.services.ai_cascade import AICascade, ai_cascade
                     cascade = AICascade()
                     prompt = (
                         f"You are a Cognitive Graph Profiler. The user has been classified as {mind_type} (MBTI-style Mind Type).\n"
@@ -2468,7 +2468,7 @@ async def get_detailed_profile(
 
         # Call LLM to generate the explanations only on cache miss
         if not explanations:
-            from backend.services.ai_cascade import AICascade
+            from backend.services.ai_cascade import AICascade, ai_cascade
             cascade = AICascade()
             
             hubs_str = ", ".join(hub_labels) if hub_labels else "None"
@@ -2767,37 +2767,6 @@ async def import_zip(
     logger.info("Audit Log - Import ZIP completed: user_id=%s, imported_count=%d", user.id, imported_count)
     return {"status": "success", "imported_count": imported_count}
 
-
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    jwt_cookie = websocket.cookies.get("recall_session") or websocket.cookies.get("jwt")
-    if not jwt_cookie:
-        await websocket.close(code=4001)
-        return
-
-    try:
-        from backend.middleware.twa_auth import verify_jwt
-        from backend.config import settings
-        payload = verify_jwt(jwt_cookie, settings.JWT_SECRET)
-        user_id_str = payload.get("sub")
-        if not user_id_str:
-            await websocket.close(code=4001)
-            return
-        user_id = int(user_id_str)
-    except Exception:
-        await websocket.close(code=4001)
-        return
-
-    await manager.connect(user_id, websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            if data == "ping":
-                await websocket.send_text("pong")
-    except WebSocketDisconnect:
-        manager.disconnect(user_id, websocket)
-    except Exception:
-        manager.disconnect(user_id, websocket)
 
 
 @router.post(

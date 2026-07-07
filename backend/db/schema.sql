@@ -72,10 +72,10 @@ CREATE TABLE IF NOT EXISTS items (
 -- 4. PARTITIONS
 -- Pre-create partitions for June and July 2026
 CREATE TABLE IF NOT EXISTS items_y2026m06 PARTITION OF items
-    FOR VALUES FROM ('2026-06-01 00:00:00') TO ('2026-07-01 00:00:00');
+     FOR VALUES FROM ('2026-06-01 00:00:00') TO ('2026-07-01 00:00:00');
 
 CREATE TABLE IF NOT EXISTS items_y2026m07 PARTITION OF items
-    FOR VALUES FROM ('2026-07-01 00:00:00') TO ('2026-08-01 00:00:00');
+     FOR VALUES FROM ('2026-07-01 00:00:00') TO ('2026-08-01 00:00:00');
 
 -- 5. QUIZZES TABLE
 CREATE TABLE IF NOT EXISTS quizzes (
@@ -274,3 +274,42 @@ CREATE INDEX IF NOT EXISTS idx_journey_invites_code
   ON journey_invites(invite_code);
 CREATE INDEX IF NOT EXISTS idx_journey_invites_inviter
   ON journey_invites(inviter_id, status);
+
+-- 19. TELEMETRY COST LOGS TABLE
+CREATE TABLE IF NOT EXISTS telemetry_cost_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE SET NULL,
+    request_id VARCHAR(100),
+    provider VARCHAR(50) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    task VARCHAR(50) NOT NULL,
+    prompt_tokens INT DEFAULT 0,
+    completion_tokens INT DEFAULT 0,
+    total_tokens INT DEFAULT 0,
+    audio_duration_seconds NUMERIC(8, 2) DEFAULT 0.0,
+    cost_usd NUMERIC(12, 8) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_telemetry_cost_logs_user_id ON telemetry_cost_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_telemetry_cost_logs_created_at ON telemetry_cost_logs(created_at);
+
+-- 20. AI DECISION LOGS TABLE
+CREATE TABLE IF NOT EXISTS ai_decision_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE SET NULL,
+    request_id VARCHAR(100) NOT NULL,
+    execution_id VARCHAR(100) NOT NULL,
+    task VARCHAR(50) NOT NULL,
+    pipeline VARCHAR(100) NOT NULL,
+    provider_used VARCHAR(50),
+    model_used VARCHAR(100),
+    success BOOLEAN NOT NULL,
+    attempts JSONB NOT NULL,       -- Detailed array of attempt metadata
+    final_output JSONB,           -- Sanitized final validation payload
+    error_message TEXT,           -- Complete error trace if all candidates failed
+    cache_hit BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_decision_logs_user_id ON ai_decision_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_decision_logs_created_at ON ai_decision_logs(created_at);

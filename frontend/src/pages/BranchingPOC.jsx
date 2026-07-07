@@ -70,6 +70,12 @@ const SLOTS = [
   { id:14, comp:'plaster', si:1, retirable:true,  pos:[ 0.00,0.44,-1.58], sz:[2.90,0.88,0.34], sc:28, hasWindow:true },
   { id:15, comp:'plaster', si:1, retirable:true,  pos:[ 0.00,0.44, 1.58], sz:[2.90,0.88,0.34], sc:31, hasDoor:true  },
 
+  // COTTAGE ROOF — flat slab sitting on top of the four plaster walls (si=1, sc=31)
+  // Fires at same score as front door so the cottage "completes" at once.
+  // Slightly wider/deeper than wall perimeter for a small overhang.
+  // y = wall center (0.44) + wall half-height (0.44) + slab half-thickness (0.055) = 0.935
+  { id:58, comp:'cottage_roof', si:1, retirable:true, pos:[0.00, 0.935, 0.00], sz:[3.20, 0.11, 2.90], sc:31 },
+
   // HOUSE — full-height fired brick from ground (si=2, sc 32–51)
   { id:16, comp:'brick',   si:2, retirable:true, pos:[-1.58,0.70, 0.00], sz:[0.34,1.40,1.98], sc:36, hasWindow:true },
   { id:17, comp:'brick',   si:2, retirable:true, pos:[ 1.58,0.70, 0.00], sz:[0.34,1.40,1.98], sc:40, hasWindow:true },
@@ -471,6 +477,37 @@ function PlasterVisual({ slot }) {
           </group>
         )}
       </group>
+    </>
+  );
+}
+
+/* Cottage flat roof — thin stone slab with slight overhang */
+function CottageRoofVisual({ slot }) {
+  const [W, H, D] = slot.sz;
+  const slabGeo = useMemo(() => {
+    const g = new THREE.BoxGeometry(W, H, D, 3, 1, 3);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const n = (sr(i * 7 + slot.id * 13) - 0.5) * 0.006;
+      p.setXYZ(i, p.getX(i) + n, p.getY(i), p.getZ(i) + n);
+    }
+    g.computeVertexNormals();
+    return g;
+  }, [W, H, D, slot.id]);
+
+  // Thin overhang drip edge around perimeter
+  const edgeGeo = useMemo(() => new THREE.BoxGeometry(W + 0.04, 0.032, D + 0.04), [W, D]);
+
+  return (
+    <>
+      {/* Main slab — slate/stone colour */}
+      <mesh geometry={slabGeo} castShadow receiveShadow>
+        <meshStandardMaterial color="#8A8070" roughness={0.88} metalness={0.04} />
+      </mesh>
+      {/* Drip edge — slightly darker, hangs at bottom of slab */}
+      <mesh geometry={edgeGeo} position={[0, -H / 2 - 0.016, 0]} castShadow>
+        <meshStandardMaterial color="#6A6058" roughness={0.90} />
+      </mesh>
     </>
   );
 }
@@ -1753,6 +1790,7 @@ function BlockMesh({ slot, state }) {
       case 'wicker':  return WickerVisual;
       case 'stone':   return StoneVisual;
       case 'plaster': return PlasterVisual;
+      case 'cottage_roof': return CottageRoofVisual;
       case 'brick':   return BrickVisual;
       case 'chimney':       return ChimneyVisual;
       case 'tower':         return TowerVisual;
@@ -2587,7 +2625,7 @@ function PeekPanel({ completedStages, peekStage, onSelect, onClose }) {
 }
 
 /* ═══ VIEWPORT ═══════════════════════════════════════════════════════════ */
-export default function BranchingPOCViewport({ externalScore, hearthMode } = {}) {
+export default function BranchingPOCViewport({ externalScore, hearthMode, onReplayReady, pairId } = {}) {
   const [blockStates,setBlockStates]=useState(()=>Object.fromEntries(SLOTS.map(s=>[s.id,'pending'])));
   const [score,setScore]=useState(externalScore ?? 0);
   const [peekStage,setPeekStage]=useState(null); // null=normal, 0=hut, 1=cottage, 2=house...
@@ -2598,15 +2636,95 @@ export default function BranchingPOCViewport({ externalScore, hearthMode } = {})
 
   const isPlayingRef=useRef(true);
   const timeoutIdRef=useRef(null);
+  const hearthInitDone=useRef(false);  // prevents re-running delta logic on re-renders
 
   const setOne=useCallback((id,s)=>setBlockStates(p=>({...p,[id]:s})),[]);
 
-  // When Hearth provides a real score from the API, sync it in
-  useEffect(() => {
-    if (externalScore !== undefined && externalScore !== null) {
-      setScore(externalScore);
+  // ── Helper: snap blockStates to a score without animation ────────────────
+  const snapToScore = useCallback((s) => {
+    const si = getStage(s);
+    prevStageRef.current = si;
+    setScore(s);
+    setBlockStates(() => {
+      const next = {};
+      SLOTS.forEach(slot => {
+        if (slot.sc <= s) {
+          next[slot.id] = (slot.retirable && slot.si < si)
+            ? 'dormant'
+            : CRACKED_IDS.has(slot.id) ? 'cracked' : 'placed';
+        } else {
+          next[slot.id] = 'pending';
+        }
+      });
+      return next;
+    });
+  }, []);
+
+  // ── Queue and play delta blocks (lastSeen → target) ──────────────────────
+  const playDelta = useCallback((fromScore, toScore, delayMs = 800) => {
+    if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
+    busyRef.current = false;
+    const deltaBlocks = SLOTS
+      .filter(s => s.sc > fromScore && s.sc <= toScore)
+      .sort((a, b) => a.sc - b.sc)
+      .map(s => s.id);
+    queueRef.current = deltaBlocks;
+    if (deltaBlocks.length > 0) {
+      isPlayingRef.current = true;
+      setIsPlaying(true);
+      timeoutIdRef.current = setTimeout(pop, delayMs);
+    } else {
+      isPlayingRef.current = false;
+      setIsPlaying(false);
     }
-  }, [externalScore]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Hearth delta-animation on mount / score change ──────────────────────
+  // Key is scoped per pair so switching journeys never bleeds lastSeen into a different building
+  const STORAGE_KEY = hearthMode && pairId
+    ? `hearth_last_seen_score_${pairId}`
+    : 'hearth_last_seen_score';
+
+  useEffect(() => {
+    if (!hearthMode || externalScore == null) return;
+
+    if (!hearthInitDone.current) {
+      // First mount: snap to lastSeen, animate delta, save checkpoint
+      hearthInitDone.current = true;
+      const lastSeen = Math.min(
+        parseFloat(localStorage.getItem(STORAGE_KEY) || '0'),
+        externalScore
+      );
+      snapToScore(lastSeen);
+      localStorage.setItem(STORAGE_KEY, String(externalScore));
+      // Small delay so the snapshot renders before animation starts
+      setTimeout(() => playDelta(lastSeen, externalScore, 0), 120);
+    } else {
+      // Mid-session score increase: animate only newly earned blocks
+      const prev = score;
+      if (externalScore > prev) {
+        localStorage.setItem(STORAGE_KEY, String(externalScore));
+        playDelta(prev, externalScore, 400);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalScore, hearthMode]);
+
+  // ── Expose replay-from-start callback to parent ─────────────────────────
+  useEffect(() => {
+    if (!onReplayReady || !hearthMode) return;
+    onReplayReady(() => {
+      // Clear checkpoint so next real visit also replays
+      localStorage.removeItem(STORAGE_KEY);
+      // Reset everything to score 0
+      snapToScore(0);
+      // Queue all blocks up to current externalScore
+      setTimeout(() => playDelta(0, externalScore ?? 0, 600), 150);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onReplayReady, hearthMode]);
+
 
   // Retire old-stage blocks when stage advances — permanent blocks always stay
   const retireStage=useCallback((oldSi)=>{
@@ -2674,12 +2792,14 @@ export default function BranchingPOCViewport({ externalScore, hearthMode } = {})
   },[isPlaying]);
 
   useEffect(()=>{
+    // In Hearth mode the block snapshot is driven by externalScore — no auto-play
+    if (hearthMode) return;
     queueRef.current=SLOTS.filter(s=>s.sc<=POC_SCORE).sort((a,b)=>a.sc-b.sc).map(s=>s.id);
     timeoutIdRef.current=setTimeout(pop,900);
     return ()=>{
       if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
     };
-  }, [pop]);
+  }, [pop, hearthMode]);
 
   const togglePlay=useCallback(()=>{
     setIsPlaying(p=>{
@@ -2774,19 +2894,23 @@ export default function BranchingPOCViewport({ externalScore, hearthMode } = {})
         <OrbitControls enableZoom enablePan={false} enableRotate autoRotate autoRotateSpeed={0.26}
           minDistance={4} maxDistance={22} minPolarAngle={0.18} maxPolarAngle={Math.PI*0.46} target={[0,1.4,0]} />
       </Canvas>
-      <TitleHUD score={score} stage={stage} />
-      <PeekPanel
-        completedStages={completedStages}
-        peekStage={peekStage}
-        onSelect={si => setPeekStage(prev => prev === si ? null : si)}
-        onClose={() => setPeekStage(null)}
-      />
-      <StageBar
-        score={score}
-        isPlaying={isPlaying}
-        onTogglePlay={togglePlay}
-        onStageClick={jumpToStage}
-      />
+      {!hearthMode && <TitleHUD score={score} stage={stage} />}
+      {!hearthMode && (
+        <PeekPanel
+          completedStages={completedStages}
+          peekStage={peekStage}
+          onSelect={si => setPeekStage(prev => prev === si ? null : si)}
+          onClose={() => setPeekStage(null)}
+        />
+      )}
+      {!hearthMode && (
+        <StageBar
+          score={score}
+          isPlaying={isPlaying}
+          onTogglePlay={togglePlay}
+          onStageClick={jumpToStage}
+        />
+      )}
       <div style={{position:'absolute',inset:0,pointerEvents:'none',background:'radial-gradient(ellipse 82% 82% at 50% 52%,transparent 46%,rgba(3,2,1,0.82) 100%)'}}/>
     </div>
   );

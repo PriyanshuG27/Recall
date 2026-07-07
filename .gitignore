@@ -198,6 +198,7 @@ docs/generate_prompts_html.py
 # Agent Workspace Directories
 brain/
 convo_history/
+.agents/
 
 # Local task, planning, and verification files
 walkthrough.md

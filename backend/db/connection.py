@@ -144,8 +144,60 @@ async def open_pool() -> None:
                     UNIQUE(user_id, tag)
                 );
             """)
+            
+            # Create journey_pairs and journey_invites tables on startup (Hearth feature)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS journey_pairs (
+                  id          SERIAL PRIMARY KEY,
+                  user_a_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                  user_b_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                  shared_days INTEGER NOT NULL DEFAULT 0,
+                  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  status      VARCHAR(20) NOT NULL DEFAULT 'active',
+                  CHECK (user_a_id < user_b_id)
+                );
+            """)
+            await conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_journey_pairs_users ON journey_pairs(user_a_id, user_b_id);")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_journey_pairs_a ON journey_pairs(user_a_id);")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_journey_pairs_b ON journey_pairs(user_b_id);")
+
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS journey_invites (
+                  id          SERIAL PRIMARY KEY,
+                  inviter_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                  invite_code VARCHAR(16) NOT NULL UNIQUE,
+                  status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+                  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  expires_at  TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '7 days'
+                );
+            """)
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_journey_invites_code ON journey_invites(invite_code);")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_journey_invites_inviter ON journey_invites(inviter_id, status);")
+
+            # Create ai_decision_logs table for observability
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS ai_decision_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id INT REFERENCES users(id) ON DELETE SET NULL,
+                    request_id VARCHAR(100) NOT NULL,
+                    execution_id VARCHAR(100) NOT NULL,
+                    task VARCHAR(50) NOT NULL,
+                    pipeline VARCHAR(100) NOT NULL,
+                    provider_used VARCHAR(50),
+                    model_used VARCHAR(100),
+                    success BOOLEAN NOT NULL,
+                    attempts JSONB NOT NULL,
+                    final_output JSONB,
+                    error_message TEXT,
+                    cache_hit BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+            """)
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_decision_logs_user_id ON ai_decision_logs(user_id);")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_decision_logs_created_at ON ai_decision_logs(created_at);")
+
             await conn.commit()
-        logger.info("Dynamic schema check completed: items.context_prompt, items.passive_context, items.save_time_bucket, and insight_candidates verified/added.")
+        logger.info("Dynamic schema check completed: tables and columns verified/added successfully.")
         await seed_static_centroids(_pool)
     except Exception as ddl_err:
         logger.error("Failed to run dynamic schema update: %s", ddl_err)

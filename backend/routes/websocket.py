@@ -60,11 +60,25 @@ async def broadcast(user_id: int, event: dict) -> None:
     except Exception as broadcast_err:
         logger.error("Failed to broadcast multi-server WebSocket event for user %d: %s", user_id, broadcast_err)
 
+from typing import Optional
+
+@router.websocket("/ws")
 @router.websocket("/ws/{token}")
-async def websocket_endpoint(websocket: WebSocket, token: str):
+@router.websocket("/api/ws")
+@router.websocket("/api/ws/{token}")
+async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
+    # Try getting token from cookies if not in path
+    jwt_token = token
+    if not jwt_token:
+        jwt_token = websocket.cookies.get("recall_session") or websocket.cookies.get("jwt")
+    
+    if not jwt_token:
+        await websocket.close(code=4001)
+        return
+
     # Validate the JWT
     try:
-        payload = verify_jwt(token, settings.JWT_SECRET)
+        payload = verify_jwt(jwt_token, settings.JWT_SECRET)
         user_id_str = payload.get("sub")
         if not user_id_str:
             await websocket.close(code=4001)

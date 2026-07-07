@@ -151,8 +151,8 @@ async def test_generate_insight_mock_mode():
 
 @pytest.mark.asyncio
 async def test_generate_insight_groq_success(monkeypatch, override_test_guard):
-    orig_groq = settings.GROQ_API_KEY
-    settings.GROQ_API_KEY = "real-groq-key"
+    orig_nvidia = settings.NVIDIA_API_KEY
+    settings.NVIDIA_API_KEY = "real-nvidia-key"
     
     mock_resp = mock.Mock()
     mock_resp.status_code = 200
@@ -175,14 +175,14 @@ async def test_generate_insight_groq_success(monkeypatch, override_test_guard):
         res = await override_test_guard.generate_insight(item_a, item_b, 45)
         assert res == "Insight about structure vs speed"
     finally:
-        settings.GROQ_API_KEY = orig_groq
+        settings.NVIDIA_API_KEY = orig_nvidia
 
 
 @pytest.mark.asyncio
 async def test_generate_insight_gemini_fallback_success(monkeypatch, override_test_guard):
-    orig_groq = settings.GROQ_API_KEY
+    orig_nvidia = settings.NVIDIA_API_KEY
     orig_gemini = settings.GEMINI_API_KEY
-    settings.GROQ_API_KEY = None
+    settings.NVIDIA_API_KEY = None
     settings.GEMINI_API_KEY = "real-gemini-key"
     
     mock_resp = mock.Mock()
@@ -206,14 +206,14 @@ async def test_generate_insight_gemini_fallback_success(monkeypatch, override_te
         res = await override_test_guard.generate_insight(item_a, item_b, 45)
         assert res == "Gemini fallback insight"
     finally:
-        settings.GROQ_API_KEY = orig_groq
+        settings.NVIDIA_API_KEY = orig_nvidia
         settings.GEMINI_API_KEY = orig_gemini
 
 
 @pytest.mark.asyncio
 async def test_generate_insight_rejection_no_tension(monkeypatch, override_test_guard):
-    orig_groq = settings.GROQ_API_KEY
-    settings.GROQ_API_KEY = "real-groq-key"
+    orig_nvidia = settings.NVIDIA_API_KEY
+    settings.NVIDIA_API_KEY = "real-nvidia-key"
     
     mock_resp = mock.Mock()
     mock_resp.status_code = 200
@@ -236,14 +236,14 @@ async def test_generate_insight_rejection_no_tension(monkeypatch, override_test_
         res = await override_test_guard.generate_insight(item_a, item_b, 45)
         assert res is None
     finally:
-        settings.GROQ_API_KEY = orig_groq
+        settings.NVIDIA_API_KEY = orig_nvidia
 
 
 @pytest.mark.asyncio
 async def test_generate_insight_all_fail(monkeypatch, override_test_guard):
-    orig_groq = settings.GROQ_API_KEY
+    orig_nvidia = settings.NVIDIA_API_KEY
     orig_gemini = settings.GEMINI_API_KEY
-    settings.GROQ_API_KEY = "real-groq-key"
+    settings.NVIDIA_API_KEY = "real-nvidia-key"
     settings.GEMINI_API_KEY = "real-gemini-key"
     
     async def mock_post_fail(*args, **kwargs):
@@ -257,5 +257,5 @@ async def test_generate_insight_all_fail(monkeypatch, override_test_guard):
         res = await override_test_guard.generate_insight(item_a, item_b, 45)
         assert res is None
     finally:
-        settings.GROQ_API_KEY = orig_groq
+        settings.NVIDIA_API_KEY = orig_nvidia
         settings.GEMINI_API_KEY = orig_gemini

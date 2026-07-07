@@ -184,6 +184,10 @@ async def lifespan(app: FastAPI):
     settings.validate_crypto_keys()
     logger.info("Recall API started — crypto keys validated.")
 
+    # Initialize Event Bus
+    from backend.services.ai_cascade.events.event_bus import event_bus
+    event_bus.initialize()
+
     # Open the async DB connection pool
     await open_pool()
 
@@ -263,6 +267,11 @@ async def lifespan(app: FastAPI):
 
     from backend.db.connection import close_pool
     await close_pool()
+    
+    # Shutdown Event Bus
+    from backend.services.ai_cascade.events.event_bus import event_bus
+    event_bus.shutdown()
+    
     logger.info("Recall API shutdown complete.")
 
 
@@ -370,12 +379,14 @@ from backend.routes.auth import router as auth_router
 from backend.routes.api import router as api_router
 from backend.routes.websocket import router as websocket_router
 from backend.routes.hearth import router as hearth_router
+from backend.routes.metrics import router as metrics_router
 
 app.include_router(webhook_router)
 app.include_router(auth_router)
 app.include_router(api_router)
 app.include_router(websocket_router)
 app.include_router(hearth_router)
+app.include_router(metrics_router, prefix="/api")
 
 @app.get(
     "/health",

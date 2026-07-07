@@ -20,8 +20,8 @@ async def test_ai_cascade_generate_insight_prod():
     item_a = {"title": "FastAPI Guide", "summary": "Async python web framework", "tags": ["tech"]}
     item_b = {"title": "PostgreSQL Optimization", "summary": "Indexing and queries", "tags": ["db"]}
 
-    with mock.patch("backend.services.ai_cascade.settings.GROQ_API_KEY", "mock_key"), \
-         mock.patch.object(cascade, "_call_groq_llm", new_callable=mock.AsyncMock, return_value="Insight: Combine FastAPI with Postgres indexing."):
+    from backend.services.ai_cascade.executor.retry import RetryEngine
+    with mock.patch.object(RetryEngine, "execute_with_retry", new_callable=mock.AsyncMock, return_value="Insight: Combine FastAPI with Postgres indexing."):
         insight = await cascade.generate_insight(item_a, item_b, 5)
         assert insight is not None
         assert "FastAPI" in insight or "Postgres" in insight
@@ -33,8 +33,8 @@ async def test_ai_cascade_generate_insight_no_genuine_tension():
     item_a = {"title": "Sony WH-1000XM5 Headphone Review", "summary": "Noise cancelling headphones"}
     item_b = {"title": "Baking Sourdough Bread", "summary": "Flour and water recipe"}
 
-    with mock.patch("backend.services.ai_cascade.settings.GROQ_API_KEY", "mock_key"), \
-         mock.patch.object(cascade, "_call_groq_llm", new_callable=mock.AsyncMock, return_value="NO_GENUINE_TENSION"):
+    from backend.services.ai_cascade.executor.retry import RetryEngine
+    with mock.patch.object(RetryEngine, "execute_with_retry", new_callable=mock.AsyncMock, return_value="NO_GENUINE_TENSION"):
         insight = await cascade.generate_insight(item_a, item_b, 10)
         assert insight is None
 
@@ -51,8 +51,8 @@ async def test_ai_cascade_generate_quiz_prod():
         "explanation": "Event loops schedule and execute asynchronous tasks."
     })
 
-    with mock.patch("backend.services.ai_cascade.settings.GROQ_API_KEY", "mock_key"), \
-         mock.patch.object(cascade, "_call_groq_llm", new_callable=mock.AsyncMock, return_value=mock_quiz_json):
+    from backend.services.ai_cascade.executor.retry import RetryEngine
+    with mock.patch.object(RetryEngine, "execute_with_retry", new_callable=mock.AsyncMock, return_value=mock_quiz_json):
         quiz = await cascade.generate_quiz(text_content)
         assert isinstance(quiz, dict)
         assert quiz["question"] == "What is an event loop?"

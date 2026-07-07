@@ -26,7 +26,7 @@ from backend.services.redis_client import redis
 from backend.services.dlq import write_to_dlq, send_failure_message
 from backend.services.encryption import encrypt, decrypt
 from backend.services.search_service import embed_text
-from backend.services.ai_cascade import AICascade, current_mood_var
+from backend.services.ai_cascade import AICascade, ai_cascade, current_mood_var
 
 # Ingesters
 from backend.services.pdf_ingester import ingest_pdf
@@ -483,8 +483,8 @@ async def check_user_milestones(user_id: int, chat_id: str) -> None:
                                     hubs = [r[0] for r in await cur.fetchall()]
                                     hubs_str = ", ".join(hubs) if hubs else "general topics"
                                     
-                                    from backend.services.ai_cascade import AICascade
-                                    cascade = AICascade()
+                                    from backend.services.ai_cascade import ai_cascade
+                                    cascade = ai_cascade
                                     prompt = (
                                         f"You are a Cognitive Graph Profiler. The user has been classified as {code} (MBTI-style Mind Type).\n"
                                         f"Their top 3 active clusters are: {hubs_str}.\n\n"
@@ -1382,11 +1382,12 @@ async def start_worker_task() -> None:
     except Exception as recovery_err:
         logger.error("Failed to recover tasks from recall:processing: %s", recovery_err)
     
+    idle_sleep = 1.0
     while True:
         try:
-            # Poll Upstash Redis using BRPOPLPUSH with 5s timeout
+            # Poll Upstash Redis using BRPOPLPUSH with 2s timeout
             # brpoplpush atomically pops from recall:tasks and pushes to recall:processing
-            task_json = await redis.brpoplpush("recall:tasks", "recall:processing", timeout=5)
+            task_json = await redis.brpoplpush("recall:tasks", "recall:processing", timeout=2)
             
             # Reset Redis failure tracking if reachable
             if redis_fail_start is not None:
@@ -1394,6 +1395,8 @@ async def start_worker_task() -> None:
                 redis_fail_start = None
                 
             if task_json:
+                # Reset idle backoff immediately upon receiving a task
+                idle_sleep = 1.0
                 try:
                     task = json.loads(task_json)
                     # Process asynchronously inside the semaphore
@@ -1405,6 +1408,10 @@ async def start_worker_task() -> None:
                         await redis.lrem("recall:processing", 1, task_json)
                     except Exception as clean_err:
                         logger.error("Failed to clean invalid task from processing queue: %s", clean_err)
+            else:
+                # No task was returned: Sleep with exponential backoff to preserve Upstash daily free quota limits
+                await asyncio.sleep(idle_sleep)
+                idle_sleep = min(idle_sleep * 1.5, 30.0)
                     
         except Exception as redis_err:
             if redis_fail_start is None:
@@ -1418,8 +1425,8 @@ async def start_worker_task() -> None:
                         elapsed
                     )
             
-            # Brief sleep before retrying
-            await asyncio.sleep(2.0)
+            # Brief sleep before retrying on connection failure
+            await asyncio.sleep(5.0)
 
 
 async def compute_passive_context(user_id: int, source_type: str, conn) -> str:

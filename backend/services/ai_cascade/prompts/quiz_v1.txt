@@ -1,0 +1,10 @@
+Generate a single multiple-choice quiz question based on the content provided below.
+The question must test the key concepts in the content and should have exactly 4 options.
+Output ONLY a raw JSON object. Do NOT output any thinking/reasoning process (no <think> tags).
+The JSON must have the following structure:
+{
+  "question": "Question text here",
+  "options": ["Option A", "Option B", "Option C", "Option D"],
+  "correct_index": 0,
+  "explanation": "Brief explanation of why the correct option is right."
+}

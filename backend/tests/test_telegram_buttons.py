@@ -194,7 +194,7 @@ async def test_generate_quiz_real_llm_parse():
         "explanation": "Simple math"
     })
     
-    with mock.patch.object(cascade, "_call_groq_llm", new_callable=mock.AsyncMock, return_value=mock_response), \
+    with mock.patch("backend.services.ai_cascade.executor.retry.RetryEngine.execute_with_retry", new_callable=mock.AsyncMock, return_value=mock_response), \
          mock.patch("backend.services.ai_cascade.settings") as mock_settings:
         mock_settings.COMPUTE_PROVIDER = "groq"
         mock_settings.GROQ_API_KEY = "dummy"
@@ -211,7 +211,7 @@ async def test_generate_quiz_invalid_json():
     cascade = AICascade()
     cascade._force_production_llm = True
     
-    with mock.patch.object(cascade, "_call_groq_llm", new_callable=mock.AsyncMock, return_value="Invalid JSON response"), \
+    with mock.patch("backend.services.ai_cascade.executor.retry.RetryEngine.execute_with_retry", new_callable=mock.AsyncMock, return_value="Invalid JSON response"), \
          mock.patch("backend.services.ai_cascade.settings") as mock_settings:
         mock_settings.COMPUTE_PROVIDER = "groq"
         mock_settings.GROQ_API_KEY = "dummy"

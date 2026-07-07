@@ -1,11 +1,15 @@
 """
 backend/routes/hearth.py
 ========================
-Hearth feature endpoints — shared home progression for two paired users.
+Hearth feature endpoints — shared home progression for paired users.
+
+Multiple journeys supported: a user can have multiple active pairs (one per
+unique partner). Leaving a journey hard-deletes the pair row — progress is
+permanently gone, as warned to the user.
 
 All endpoints require JWT cookie auth (get_current_user).
-Partner data exposed: name only — never items, raw_text, or embeddings.
-Invite codes use secrets.token_urlsafe — cryptographically random, expire 7 days.
+Uses psycopg3 AsyncConnection cursor queries with dict_row row_factory.
+Query placeholders use %s (psycopg3 standard) instead of pg-specific $1/$2.
 """
 
 import logging
@@ -15,6 +19,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from psycopg.rows import dict_row
 
 from backend.middleware.twa_auth import get_current_user, UserContext
 from backend.db.connection import get_db
@@ -23,6 +28,20 @@ from backend.services.http_client import get_http_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["hearth"])
+
+
+# ── Row helper ────────────────────────────────────────────────────────────────
+
+def get_row_val(row, key: str, index: int):
+    """Safely extracts value from row supporting both dict and tuple formats."""
+    if not row:
+        return None
+    if isinstance(row, dict):
+        return row.get(key)
+    try:
+        return row[index]
+    except (IndexError, TypeError):
+        return None
 
 
 # ── Score formula ────────────────────────────────────────────────────────────
@@ -75,6 +94,66 @@ class AcceptBody(BaseModel):
     invite_code: str
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+async def _build_journey_dict(cur, pair: dict, user_id: int) -> dict:
+    """Given a pair row and the requesting user_id, return a journey object."""
+    user_a_id  = get_row_val(pair, "user_a_id", 1)
+    user_b_id  = get_row_val(pair, "user_b_id", 2)
+    pair_id    = get_row_val(pair, "id", 0)
+    days       = get_row_val(pair, "shared_days", 3) or 0
+    created_at = get_row_val(pair, "created_at", 4)
+
+    partner_id = user_b_id if user_a_id == user_id else user_a_id
+
+    await cur.execute(
+        "SELECT first_name, username FROM users WHERE id = %s;",
+        (partner_id,),
+    )
+    partner = await cur.fetchone()
+    partner_name = "Partner"
+    if partner:
+        p_first = get_row_val(partner, "first_name", 0)
+        p_user  = get_row_val(partner, "username",   1)
+        partner_name = p_first or p_user or "Partner"
+
+    await cur.execute(
+        """
+        SELECT 1 FROM items
+        WHERE user_id = %s AND created_at::date = CURRENT_DATE
+        LIMIT 1;
+        """,
+        (partner_id,),
+    )
+    partner_active_today = bool(await cur.fetchone())
+
+    await cur.execute(
+        """
+        SELECT 1 FROM items
+        WHERE user_id = %s AND created_at::date = CURRENT_DATE
+        LIMIT 1;
+        """,
+        (user_id,),
+    )
+    self_active_today = bool(await cur.fetchone())
+
+    score      = shared_days_to_score(days)
+    paired_since = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
+
+    return {
+        "pair_id":              str(pair_id),
+        "is_paired":            True,
+        "score":                round(score, 2),
+        "shared_days":          days,
+        "stage":                get_stage(days),
+        "partner_name":         partner_name,
+        "partner_id":           partner_id,
+        "partner_active_today": partner_active_today,
+        "self_active_today":    self_active_today,
+        "paired_since":         paired_since,
+    }
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.get("/api/hearth")
@@ -83,68 +162,28 @@ async def get_hearth(
     db=Depends(get_db),
 ):
     """
-    Return the current user's Hearth state.
-    If not paired → { is_paired: false }.
-    If paired   → full state with score, partner info, activity status.
+    Return all active journeys for the current user.
+    Response: { journeys: [...] }
+    Empty list means unpaired.
     """
-    pair = await db.fetchrow(
-        """
-        SELECT id, user_a_id, user_b_id, shared_days, created_at
-        FROM journey_pairs
-        WHERE (user_a_id = $1 OR user_b_id = $1) AND status = 'active'
-        LIMIT 1
-        """,
-        user.id,
-    )
+    async with db.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            """
+            SELECT id, user_a_id, user_b_id, shared_days, created_at
+            FROM journey_pairs
+            WHERE (user_a_id = %s OR user_b_id = %s)
+            ORDER BY created_at DESC;
+            """,
+            (user.id, user.id),
+        )
+        pairs = await cur.fetchall()
 
-    if not pair:
-        return {
-            "is_paired":   False,
-            "score":       0,
-            "shared_days": 0,
-            "stage":       "Hut",
-        }
+        journeys = []
+        for pair in pairs:
+            journey = await _build_journey_dict(cur, pair, user.id)
+            journeys.append(journey)
 
-    partner_id = pair["user_b_id"] if pair["user_a_id"] == user.id else pair["user_a_id"]
-
-    partner = await db.fetchrow(
-        "SELECT first_name, username FROM users WHERE id = $1",
-        partner_id,
-    )
-
-    # Did partner save anything today?
-    partner_active_today = await db.fetchval(
-        """
-        SELECT 1 FROM items
-        WHERE user_id = $1 AND created_at::date = CURRENT_DATE
-        LIMIT 1
-        """,
-        partner_id,
-    )
-
-    # Did I save anything today?
-    self_active_today = await db.fetchval(
-        """
-        SELECT 1 FROM items
-        WHERE user_id = $1 AND created_at::date = CURRENT_DATE
-        LIMIT 1
-        """,
-        user.id,
-    )
-
-    days  = pair["shared_days"]
-    score = shared_days_to_score(days)
-
-    return {
-        "is_paired":            True,
-        "score":                round(score, 2),
-        "shared_days":          days,
-        "stage":                get_stage(days),
-        "partner_name":         partner["first_name"] or partner["username"] or "Partner",
-        "partner_active_today": bool(partner_active_today),
-        "self_active_today":    bool(self_active_today),
-        "paired_since":         pair["created_at"].isoformat(),
-    }
+    return {"journeys": journeys}
 
 
 @router.get("/api/hearth/status")
@@ -152,24 +191,27 @@ async def get_hearth_status(
     user: UserContext = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Quick check: is the user paired? Does they have a pending invite?"""
-    is_paired = bool(await db.fetchval(
-        """
-        SELECT 1 FROM journey_pairs
-        WHERE (user_a_id = $1 OR user_b_id = $1) AND status = 'active'
-        LIMIT 1
-        """,
-        user.id,
-    ))
+    """Quick check: is the user paired? Do they have a pending invite?"""
+    async with db.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT 1 FROM journey_pairs
+            WHERE (user_a_id = %s OR user_b_id = %s)
+            LIMIT 1;
+            """,
+            (user.id, user.id),
+        )
+        is_paired = bool(await cur.fetchone())
 
-    has_pending_invite = bool(await db.fetchval(
-        """
-        SELECT 1 FROM journey_invites
-        WHERE inviter_id = $1 AND status = 'pending' AND expires_at > NOW()
-        LIMIT 1
-        """,
-        user.id,
-    ))
+        await cur.execute(
+            """
+            SELECT 1 FROM journey_invites
+            WHERE inviter_id = %s AND status = 'pending' AND expires_at > NOW()
+            LIMIT 1;
+            """,
+            (user.id,),
+        )
+        has_pending_invite = bool(await cur.fetchone())
 
     return {"is_paired": is_paired, "has_pending_invite": has_pending_invite}
 
@@ -180,50 +222,41 @@ async def create_invite(
     db=Depends(get_db),
 ):
     """
-    Generate a Hearth invite code for the current user.
-    Raises 400 if already in an active Hearth.
-    Returns invite_code and invite_url.
+    Generate a Hearth invite code.
+    Multiple journeys are allowed — no longer blocked by existing pairs.
+    Returns existing pending invite if one exists.
     """
-    existing_pair = await db.fetchval(
-        """
-        SELECT id FROM journey_pairs
-        WHERE (user_a_id = $1 OR user_b_id = $1) AND status = 'active'
-        LIMIT 1
-        """,
-        user.id,
-    )
-    if existing_pair:
-        raise HTTPException(status_code=400, detail="Already in an active Hearth")
+    async with db.cursor(row_factory=dict_row) as cur:
+        # Return existing pending invite if one exists
+        await cur.execute(
+            """
+            SELECT invite_code FROM journey_invites
+            WHERE inviter_id = %s AND status = 'pending' AND expires_at > NOW()
+            ORDER BY created_at DESC LIMIT 1;
+            """,
+            (user.id,),
+        )
+        existing_invite = await cur.fetchone()
+        if existing_invite:
+            code = get_row_val(existing_invite, "invite_code", 0)
+            return {
+                "invite_code": code,
+                "invite_url":  f"https://t.me/recall_bot?start=hearth_{code}",
+                "expires_in":  "7 days",
+            }
 
-    # Return existing pending invite if one exists
-    existing_invite = await db.fetchrow(
-        """
-        SELECT invite_code FROM journey_invites
-        WHERE inviter_id = $1 AND status = 'pending' AND expires_at > NOW()
-        ORDER BY created_at DESC LIMIT 1
-        """,
-        user.id,
-    )
-    if existing_invite:
-        code = existing_invite["invite_code"]
-        return {
-            "invite_code": code,
-            "invite_url":  f"https://t.me/recall_bot?start=hearth_{code}",
-            "expires_in":  "7 days",
-        }
+        # Generate new code: format RCL-XXXX-XXXX
+        raw  = secrets.token_urlsafe(9).upper().replace("-", "").replace("_", "")[:8]
+        code = f"RCL-{raw[:4]}-{raw[4:8]}"
 
-    # Generate new code: format RCL-XXXX-XXXX
-    raw  = secrets.token_urlsafe(9).upper().replace("-", "").replace("_", "")[:8]
-    code = f"RCL-{raw[:4]}-{raw[4:8]}"
-
-    await db.execute(
-        """
-        INSERT INTO journey_invites (inviter_id, invite_code)
-        VALUES ($1, $2)
-        """,
-        user.id,
-        code,
-    )
+        await cur.execute(
+            """
+            INSERT INTO journey_invites (inviter_id, invite_code)
+            VALUES (%s, %s);
+            """,
+            (user.id, code),
+        )
+        await db.commit()
 
     return {
         "invite_code": code,
@@ -240,71 +273,140 @@ async def accept_invite(
 ):
     """
     Accept a Hearth invite code and create the pair.
+    Multiple journeys are supported — only guards: no self-pair,
+    and no duplicate active pair with the same person (DB unique constraint).
     Both users receive a Telegram notification.
     """
-    invite = await db.fetchrow(
-        """
-        SELECT id, inviter_id FROM journey_invites
-        WHERE invite_code = $1
-          AND status = 'pending'
-          AND expires_at > NOW()
-        """,
-        body.invite_code,
-    )
-
-    if not invite:
-        raise HTTPException(status_code=404, detail="Invalid or expired invite code")
-
-    if invite["inviter_id"] == user.id:
-        raise HTTPException(status_code=400, detail="Cannot pair with yourself")
-
-    # Check neither user is already paired
-    already_paired = await db.fetchval(
-        """
-        SELECT 1 FROM journey_pairs
-        WHERE (user_a_id = $1 OR user_b_id = $1
-            OR user_a_id = $2 OR user_b_id = $2)
-          AND status = 'active'
-        LIMIT 1
-        """,
-        user.id,
-        invite["inviter_id"],
-    )
-    if already_paired:
-        raise HTTPException(status_code=400, detail="One of you is already in an active Hearth")
-
-    # Canonical ordering: smaller id = user_a
-    a_id, b_id = sorted([invite["inviter_id"], user.id])
-
-    # Transaction: create pair + mark invite accepted
-    async with db.transaction():
-        await db.execute(
+    async with db.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
             """
-            INSERT INTO journey_pairs (user_a_id, user_b_id)
-            VALUES ($1, $2)
-            ON CONFLICT DO NOTHING
+            SELECT id, inviter_id FROM journey_invites
+            WHERE invite_code = %s
+              AND status = 'pending'
+              AND expires_at > NOW();
             """,
-            a_id,
-            b_id,
+            (body.invite_code,),
         )
-        await db.execute(
-            "UPDATE journey_invites SET status = 'accepted' WHERE id = $1",
-            invite["id"],
+        invite = await cur.fetchone()
+
+        if not invite:
+            raise HTTPException(status_code=404, detail="Invalid or expired invite code")
+
+        inviter_id = get_row_val(invite, "inviter_id", 1)
+        invite_id  = get_row_val(invite, "id", 0)
+
+        if inviter_id == user.id:
+            raise HTTPException(status_code=400, detail="Cannot pair with yourself")
+
+        # Check if this exact pair already exists (prevents duplicate with same person)
+        a_id, b_id = sorted([inviter_id, user.id])
+        await cur.execute(
+            """
+            SELECT 1 FROM journey_pairs
+            WHERE user_a_id = %s AND user_b_id = %s
+            LIMIT 1;
+            """,
+            (a_id, b_id),
         )
+        if await cur.fetchone():
+            raise HTTPException(
+                status_code=400,
+                detail="You already have an active journey with this person"
+            )
 
-    # Notify the inviter via Telegram (fire-and-forget)
-    inviter = await db.fetchrow(
-        "SELECT telegram_chat_id, first_name FROM users WHERE id = $1",
-        invite["inviter_id"],
-    )
-    accepter_name = await db.fetchval(
-        "SELECT COALESCE(first_name, username, 'Someone') FROM users WHERE id = $1",
-        user.id,
-    )
+        # Transaction: create pair + mark invite accepted
+        async with db.transaction():
+            await cur.execute(
+                """
+                INSERT INTO journey_pairs (user_a_id, user_b_id)
+                VALUES (%s, %s);
+                """,
+                (a_id, b_id),
+            )
+            await cur.execute(
+                "UPDATE journey_invites SET status = 'accepted' WHERE id = %s;",
+                (invite_id,),
+            )
 
-    await _notify_telegram(
-        inviter["telegram_chat_id"],
-        f"🔥 {accepter_name} lit your Hearth. Your journey begins.",
-    )
+        # Fetch inviter info for Telegram nudge
+        await cur.execute(
+            "SELECT telegram_chat_id, first_name FROM users WHERE id = %s;",
+            (inviter_id,),
+        )
+        inviter = await cur.fetchone()
+        inviter_chat_id = get_row_val(inviter, "telegram_chat_id", 0)
+
+        await cur.execute(
+            "SELECT COALESCE(first_name, username, 'Someone') AS name FROM users WHERE id = %s;",
+            (user.id,),
+        )
+        accepter_row  = await cur.fetchone()
+        accepter_name = get_row_val(accepter_row, "name", 0) or "Someone"
+
+    if inviter_chat_id:
+        await _notify_telegram(
+            inviter_chat_id,
+            f"🔥 {accepter_name} lit your Hearth. Your journey begins.",
+        )
 
     return {"success": True, "message": "Hearth lit"}
+
+
+@router.delete("/api/hearth/leave/{pair_id}")
+async def leave_journey(
+    pair_id: int,
+    user: UserContext = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """
+    Hard-delete a journey pair. Progress is permanently gone.
+    User was explicitly warned before this is called.
+    Notifies partner via Telegram.
+    """
+    async with db.cursor(row_factory=dict_row) as cur:
+        # Verify ownership — user must be part of this pair
+        await cur.execute(
+            """
+            SELECT id, user_a_id, user_b_id
+            FROM journey_pairs
+            WHERE id = %s AND (user_a_id = %s OR user_b_id = %s);
+            """,
+            (pair_id, user.id, user.id),
+        )
+        pair = await cur.fetchone()
+        if not pair:
+            raise HTTPException(status_code=404, detail="Journey not found")
+
+        user_a_id  = get_row_val(pair, "user_a_id", 1)
+        user_b_id  = get_row_val(pair, "user_b_id", 2)
+        partner_id = user_b_id if user_a_id == user.id else user_a_id
+
+        # Fetch partner's chat ID for notification
+        await cur.execute(
+            "SELECT telegram_chat_id FROM users WHERE id = %s;",
+            (partner_id,),
+        )
+        partner_row     = await cur.fetchone()
+        partner_chat_id = get_row_val(partner_row, "telegram_chat_id", 0)
+
+        await cur.execute(
+            "SELECT COALESCE(first_name, username, 'Someone') AS name FROM users WHERE id = %s;",
+            (user.id,),
+        )
+        leaver_row  = await cur.fetchone()
+        leaver_name = get_row_val(leaver_row, "name", 0) or "Someone"
+
+        # Hard delete — data is gone as warned
+        async with db.transaction():
+            await cur.execute(
+                "DELETE FROM journey_pairs WHERE id = %s;",
+                (pair_id,),
+            )
+
+    if partner_chat_id:
+        await _notify_telegram(
+            partner_chat_id,
+            f"💔 {leaver_name} has ended your Hearth journey. Their door is closed.",
+        )
+
+    return {"success": True}

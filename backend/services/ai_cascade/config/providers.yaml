@@ -1,0 +1,106 @@
+providers:
+  groq:
+    enabled: true
+    priority: 0
+    timeout: 10
+    retries: 1
+    cooldown: 60
+    circuit_threshold: 3
+    health_check_interval: 30
+    models:
+      openai/gpt-oss-120b:
+        status: active
+        replacement: none
+      openai/gpt-oss-20b:
+        status: active
+        replacement: none
+      qwen/qwen3-32b:
+        status: active
+        replacement: none
+      whisper-large-v3:
+        status: active
+        replacement: whisper-large-v3-turbo
+      whisper-large-v3-turbo:
+        status: active
+        replacement: none
+  nvidia:
+    enabled: true
+    priority: 1
+    timeout: 20
+    retries: 1
+    cooldown: 60
+    circuit_threshold: 3
+    health_check_interval: 30
+    models:
+      qwen/qwen3-next-80b-a3b:
+        status: active
+        replacement: deepseek/deepseek-v4-pro
+      deepseek/deepseek-v4-pro:
+        status: active
+        replacement: none
+      nvidia/gpt-oss-120b:
+        status: active
+        replacement: none
+  cerebras:
+    enabled: true
+    priority: 2
+    timeout: 15
+    retries: 1
+    cooldown: 60
+    circuit_threshold: 3
+    health_check_interval: 30
+    models:
+      cerebras/openai/gpt-oss-120b:
+        status: active
+        replacement: none
+  gemini:
+    enabled: true
+    priority: 3
+    timeout: 25
+    retries: 1
+    cooldown: 60
+    circuit_threshold: 3
+    health_check_interval: 30
+    models:
+      gemini-3.1-flash-lite:
+        status: active
+        replacement: none
+  openrouter:
+    enabled: true
+    priority: 4
+    timeout: 30
+    retries: 1
+    cooldown: 60
+    circuit_threshold: 3
+    health_check_interval: 30
+    models:
+      openai/gpt-oss-120b:free:
+        status: active
+        replacement: none
+      meta-llama/llama-3.3-70b-instruct:free:
+        status: active
+        replacement: none
+      mistralai/mistral-7b-instruct:free:
+        status: active
+        replacement: none
+  modal:
+    enabled: true
+    priority: 5
+    timeout: 30
+    retries: 1
+    cooldown: 60
+    circuit_threshold: 3
+    health_check_interval: 30
+    models:
+      modal-summary:
+        status: active
+        replacement: none
+      modal-transcribe:
+        status: active
+        replacement: none
+      modal-tags:
+        status: active
+        replacement: none
+      modal-rag:
+        status: active
+        replacement: none

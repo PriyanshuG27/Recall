@@ -149,7 +149,7 @@ async def ingest_pdf(
                 raise DuplicateItemException(row[0])
 
     # Initialize cascade for OCR fallback and summarization
-    from backend.services.ai_cascade import AICascade
+    from backend.services.ai_cascade import AICascade, ai_cascade
     cascade = AICascade()
 
     # 1. Extract full text from PDF (async OCR)
@@ -180,7 +180,7 @@ async def ingest_pdf(
         summary_context = get_summarization_context(full_text, max_chars=60000)
         if user_context:
             summary_context = f"[User's Note/Context: {user_context}]\n" + summary_context
-        ai_res = await cascade.summarise(summary_context)
+        ai_res = await cascade.summarise(summary_context, user_id=user_id)
         summary = ai_res.get("summary")
         tags = ai_res.get("tags") or []
         context_prompt = ai_res.get("context_prompt")

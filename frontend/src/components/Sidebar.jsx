@@ -43,8 +43,13 @@ const ROOMS = [
     path: '/hearth',
     label: 'Hearth',
     subtitle: 'Build together',
-    hidden: true,
-    icon: null,
+    hidden: false,
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2C6 6 4 10 4 14a8 8 0 0 0 16 0c0-4-2-8-8-12z" />
+        <path d="M12 14c0-3 2-5 2-5s-4 2-4 5" />
+      </svg>
+    ),
   },
   {
     id: 'drill',
