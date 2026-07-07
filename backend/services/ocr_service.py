@@ -7,10 +7,13 @@ Executes completely in memory without temporary files, enforcing a 30s timeout.
 """
 
 import io
+import os
 import logging
 import asyncio
 from typing import Dict, Union, Optional
 from PIL import Image, ImageEnhance, ImageFilter
+
+os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
 
 logger = logging.getLogger(__name__)
 
