@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     IG_COOKIES_B64: str | None = None
 
     ENV: str = "development"
+    USE_NEW_CASCADE: bool = True
+
+    # Hub selection parameters
+    HUB_FREQUENCY_WEIGHT: float = 1.0
+    HUB_RECENCY_WEIGHT: float = 1.5
+    HUB_VELOCITY_WEIGHT: float = 2.0
+    HUB_HYSTERESIS_BOOST: float = 1.15
+    HUB_DIVERSITY_THRESHOLD: float = 0.70
+    HUB_MIN_LIFESPAN_DAYS: int = 7
 
 
 

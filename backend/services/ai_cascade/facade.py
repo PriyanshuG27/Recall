@@ -243,6 +243,23 @@ class AICascade:
     # CORE CASCADE IMPLEMENTATIONS
     # --------------------------------------------------------------------------
     async def _run_label_cascade(self, text: str) -> str:
+        if settings.USE_NEW_CASCADE:
+            from backend.services.ai_cascade.models import AITask, ExecutionContext
+            from backend.services.ai_cascade.planner.ai_planner import AIPlanner
+            from backend.services.ai_cascade.executor.engine import ExecutionEngine
+            from backend.services.ai_cascade.models import LabelResult
+            
+            task = AITask(input_data={"text": text})
+            plan = AIPlanner().plan_execution(task, "label")
+            context = ExecutionContext()
+            engine = ExecutionEngine()
+            try:
+                res = await engine.execute_plan(plan, context, "", "")
+                if isinstance(res, LabelResult):
+                    return res.label.strip()
+            except Exception as e:
+                logger.warning("Label cascade via new engine failed: %s. Falling back.", e)
+
         providers = ["groq", "gemini"]
         if settings.COMPUTE_PROVIDER:
             if settings.COMPUTE_PROVIDER in providers:
@@ -264,6 +281,23 @@ class AICascade:
         return "Community Theme"
 
     async def _run_onboarding_cascade(self, text: str) -> str:
+        if settings.USE_NEW_CASCADE:
+            from backend.services.ai_cascade.models import AITask, ExecutionContext
+            from backend.services.ai_cascade.planner.ai_planner import AIPlanner
+            from backend.services.ai_cascade.executor.engine import ExecutionEngine
+            from backend.services.ai_cascade.models import OnboardingResult
+
+            task = AITask(input_data={"text": text})
+            plan = AIPlanner().plan_execution(task, "onboarding")
+            context = ExecutionContext()
+            engine = ExecutionEngine()
+            try:
+                res = await engine.execute_plan(plan, context, "", "")
+                if isinstance(res, OnboardingResult):
+                    return res.summary.strip()
+            except Exception as e:
+                logger.warning("Onboarding cascade via new engine failed: %s. Falling back.", e)
+
         prompt_template = PromptManager.get_prompt("onboarding", "v1")
         messages = [
             {"role": "system", "content": prompt_template},
@@ -450,6 +484,24 @@ class AICascade:
             return text
 
         masked_text = mask_pii(text)
+
+        if settings.USE_NEW_CASCADE:
+            from backend.services.ai_cascade.models import AITask, ExecutionContext
+            from backend.services.ai_cascade.planner.ai_planner import AIPlanner
+            from backend.services.ai_cascade.executor.engine import ExecutionEngine
+            from backend.services.ai_cascade.models import SanitizeTranscriptResult
+
+            task = AITask(input_data={"text": masked_text})
+            plan = AIPlanner().plan_execution(task, "sanitize_transcript")
+            context = ExecutionContext()
+            engine = ExecutionEngine()
+            try:
+                res = await engine.execute_plan(plan, context, "", "")
+                if isinstance(res, SanitizeTranscriptResult):
+                    return res.transcript.strip()
+            except Exception as e:
+                logger.warning("Sanitize transcript via new engine failed: %s. Falling back to dynamic router.", e)
+
         system_prompt = PromptManager.get_prompt("transcript_sanitization", "v1")
         messages = [
             {"role": "system", "content": system_prompt},
@@ -480,6 +532,23 @@ class AICascade:
         import sys
         if (settings.ENV == "test" or "pytest" in sys.modules) and not self._force_production_llm:
             return "Mock question?"
+
+        if settings.USE_NEW_CASCADE:
+            from backend.services.ai_cascade.models import AITask, ExecutionContext
+            from backend.services.ai_cascade.planner.ai_planner import AIPlanner
+            from backend.services.ai_cascade.executor.engine import ExecutionEngine
+            from backend.services.ai_cascade.models import GenerateContextQuestionResult
+
+            task = AITask(input_data={"title": title, "summary": summary})
+            plan = AIPlanner().plan_execution(task, "generate_context_question")
+            context = ExecutionContext()
+            engine = ExecutionEngine()
+            try:
+                res = await engine.execute_plan(plan, context, "", "")
+                if isinstance(res, GenerateContextQuestionResult):
+                    return res.context_prompt.strip()
+            except Exception as e:
+                logger.warning("Generate context question via new engine failed: %s. Falling back to dynamic router.", e)
 
         prompt_template = PromptManager.get_prompt("generate_question", "v1")
         user_prompt = f"Title: {title}\nSummary: {summary}"
@@ -774,6 +843,25 @@ class AICascade:
             context_blocks.append(block)
         
         context_text = "\n".join(context_blocks)
+        max_context_chars = 10000
+        if len(context_text) > max_context_chars:
+            context_text = context_text[:max_context_chars] + "... [context truncated]"
+
+        if settings.USE_NEW_CASCADE:
+            from backend.services.ai_cascade.models import AITask, ExecutionContext, RAGResult
+            from backend.services.ai_cascade.planner.ai_planner import AIPlanner
+            from backend.services.ai_cascade.executor.engine import ExecutionEngine
+
+            task = AITask(input_data={"query": query, "context_text": context_text})
+            plan = AIPlanner().plan_execution(task, "graph")
+            context = ExecutionContext()
+            engine = ExecutionEngine()
+            try:
+                res = await engine.execute_plan(plan, context, "", "")
+                if isinstance(res, RAGResult):
+                    return res.answer.strip()
+            except Exception as e:
+                logger.warning("Graph RAG via new engine failed: %s. Falling back.", e)
 
         system_instruction = (
             "You are analyzing the user's personal knowledge graph to answer a question they asked about their own thinking.\n"
@@ -788,10 +876,6 @@ class AICascade:
             "5. Never include any diagnostic or psychological labels for the person (no 'anxiety', 'control issues', 'avoidance', clinical or psychological terms of any kind). Describe the pattern in what was saved, never the person's psychology.\n"
             "6. Any generated message containing one of these patterns is rejected: 'You seem interested in...', 'You have a passion for...', 'This might suggest...', 'It's possible that...', 'Perhaps you...', 'Your journey', 'your growth', 'your path'."
         )
-
-        max_context_chars = 10000
-        if len(context_text) > max_context_chars:
-            context_text = context_text[:max_context_chars] + "... [context truncated]"
 
         user_prompt = (
             "<retrieved_context>\n"
@@ -914,6 +998,27 @@ class AICascade:
             items_desc.append(f"Item {idx}:\nTitle: {item.get('title')}\nSummary: {item.get('summary')}\nTags: {item.get('tags')}")
         input_text = "\n\n".join(items_desc)
 
+        if settings.USE_NEW_CASCADE:
+            from backend.services.ai_cascade.models import AITask, ExecutionContext
+            from backend.services.ai_cascade.planner.ai_planner import AIPlanner
+            from backend.services.ai_cascade.executor.engine import ExecutionEngine
+            from backend.services.ai_cascade.models import JointSummaryResult
+
+            task = AITask(input_data={"text": input_text})
+            plan = AIPlanner().plan_execution(task, "joint_summary")
+            context = ExecutionContext()
+            engine = ExecutionEngine()
+            try:
+                res = await engine.execute_plan(plan, context, "", "")
+                if isinstance(res, JointSummaryResult):
+                    return {
+                        "title": res.title.strip(),
+                        "summary": res.summary.strip(),
+                        "context_prompt": res.context_prompt.strip() if res.context_prompt else "Saved! Since these are related, what is the main link between them that you want to remember?"
+                    }
+            except Exception as e:
+                logger.error("Joint summary generation via new engine failed: %s. Falling back to dynamic router.", e)
+
         prompt_template = PromptManager.get_prompt("joint_summary", "v1")
         messages = [
             {"role": "system", "content": prompt_template},
@@ -971,6 +1076,30 @@ class AICascade:
             # Parse links directly from OCR text for test mocks
             urls = re.findall(r"https?://[^\s]+", ocr_text)
             return {"urls": urls, "is_only_links": False}
+
+        if settings.USE_NEW_CASCADE:
+            from backend.services.ai_cascade.models import AITask, ExecutionContext
+            from backend.services.ai_cascade.planner.ai_planner import AIPlanner
+            from backend.services.ai_cascade.executor.engine import ExecutionEngine
+            from backend.services.ai_cascade.models import OCRCleanupResult
+
+            task = AITask(input_data={"ocr_text": ocr_text})
+            plan = AIPlanner().plan_execution(task, "ocr_cleanup")
+            context = ExecutionContext()
+            engine = ExecutionEngine()
+            try:
+                res = await engine.execute_plan(plan, context, "", "")
+                if isinstance(res, OCRCleanupResult):
+                    cleaned = []
+                    for u in res.urls:
+                        if isinstance(u, str) and u.strip():
+                            u_str = u.strip()
+                            if not u_str.lower().startswith("http"):
+                                u_str = "https://" + u_str
+                            cleaned.append(u_str)
+                    return {"urls": cleaned, "is_only_links": res.is_only_links}
+            except Exception as e:
+                logger.warning("OCR cleanup via new engine failed: %s. Falling back.", e)
 
         prompt_template = PromptManager.get_prompt("ocr_cleanup", "v1")
         user_prompt = f"Raw OCR text:\n{ocr_text}"

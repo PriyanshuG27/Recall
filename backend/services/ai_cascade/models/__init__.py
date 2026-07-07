@@ -11,6 +11,12 @@ from backend.services.ai_cascade.models.models import (
     TranscriptionResult,
     RAGResult,
     AIState,
+    LabelResult,
+    OnboardingResult,
+    OCRCleanupResult,
+    SanitizeTranscriptResult,
+    GenerateContextQuestionResult,
+    JointSummaryResult
 )
 
 __all__ = [
@@ -26,5 +32,11 @@ __all__ = [
     "TranscriptionResult",
     "RAGResult",
     "AIState",
+    "LabelResult",
+    "OnboardingResult",
+    "OCRCleanupResult",
+    "SanitizeTranscriptResult",
+    "GenerateContextQuestionResult",
+    "JointSummaryResult"
 ]
 

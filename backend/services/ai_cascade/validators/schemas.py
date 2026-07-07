@@ -35,3 +35,38 @@ class TranscriptionValidatorModel(BaseModel):
     transcript: str = Field(..., min_length=1)
     duration_seconds: Optional[float] = None
     segments: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class LabelValidatorModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    label: str = Field(..., min_length=1)
+
+
+class OnboardingValidatorModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    summary: str = Field(..., min_length=1)
+    tags: List[str] = Field(default_factory=list)
+
+
+class OCRCleanupValidatorModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    urls: List[str] = Field(default_factory=list)
+    is_only_links: bool = False
+
+
+class SanitizeTranscriptValidatorModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    transcript: str = Field(..., min_length=1)
+
+
+class GenerateContextQuestionValidatorModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    context_prompt: str = Field(..., min_length=1)
+
+
+class JointSummaryValidatorModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: str = Field(..., min_length=1)
+    summary: str = Field(..., min_length=1)
+    context_prompt: Optional[str] = None
+

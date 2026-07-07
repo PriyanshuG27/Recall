@@ -11,7 +11,13 @@ from backend.services.ai_cascade.models import (
     QuizResult,
     OCRResult,
     InsightResult,
-    TranscriptionResult
+    TranscriptionResult,
+    LabelResult,
+    OnboardingResult,
+    OCRCleanupResult,
+    SanitizeTranscriptResult,
+    GenerateContextQuestionResult,
+    JointSummaryResult
 )
 from backend.services.ai_cascade.providers.manager import provider_manager
 from backend.services.ai_cascade.models import AIState
@@ -31,7 +37,14 @@ RESULT_CLASSES = {
     "quiz": QuizResult,
     "ocr": OCRResult,
     "insight": InsightResult,
-    "transcription": TranscriptionResult
+    "transcription": TranscriptionResult,
+    "ocr_cleanup": OCRCleanupResult,
+    "label": LabelResult,
+    "onboarding": OnboardingResult,
+    "sanitize_transcript": SanitizeTranscriptResult,
+    "generate_context_question": GenerateContextQuestionResult,
+    "joint_summary": JointSummaryResult,
+    "graph": RAGResult
 }
 
 

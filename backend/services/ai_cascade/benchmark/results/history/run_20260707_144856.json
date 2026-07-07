@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-07-07T14:48:56.423270+00:00",
+  "git_commit": "db9956bf606b69a390afa3b372a2bf711e8780a5",
+  "prompt_version": "v1.1",
+  "provider_config_version": "1.0",
+  "dataset_version": "v1",
+  "python_version": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
+  "os": "Windows 11",
+  "average_weighted_score": 1.0,
+  "results": [
+    {
+      "sample_id": 1,
+      "name": "FastAPI Intro Transcription",
+      "status": "succeeded",
+      "latency_ms": 314.95,
+      "weighted_score": 1.0,
+      "evaluations": {
+        "schema_validity": 1.0,
+        "required_fields": 1.0,
+        "tag_overlap": 1.0,
+        "length_penalty": 1.0,
+        "compression_ratio": 1.0,
+        "keyword_retention": 1.0,
+        "semantic_similarity": 1.0
+      },
+      "error": ""
+    },
+    {
+      "sample_id": 2,
+      "name": "Restaurant Receipt OCR",
+      "status": "succeeded",
+      "latency_ms": 37.85,
+      "weighted_score": 1.0,
+      "evaluations": {
+        "schema_validity": 1.0,
+        "required_fields": 1.0,
+        "tag_overlap": 1.0,
+        "length_penalty": 1.0,
+        "compression_ratio": 1.0,
+        "keyword_retention": 1.0,
+        "semantic_similarity": 1.0
+      },
+      "error": ""
+    }
+  ]
+}

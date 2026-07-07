@@ -44,7 +44,11 @@ def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
     """
     import numpy as np
     import cv2
-    image = Image.open(io.BytesIO(image_bytes))
+    try:
+        image = Image.open(io.BytesIO(image_bytes))
+    except Exception as img_err:
+        logger.error("Failed to open image bytes in OCR preprocessing: %s", img_err)
+        return {"ocr_text": None, "trigger_gemini_fallback": True}
     
     # 1. Detect QR code URL first using OpenCV on original image
     qr_url = None

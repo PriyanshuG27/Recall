@@ -50,3 +50,55 @@ pipelines:
       - groq
       - gemini
       - modal
+  ocr_cleanup:
+    cache: true
+    validator: "OCRCleanupValidator"
+    schema: "ocr_cleanup.json"
+    providers:
+      - groq
+      - gemini
+  label:
+    cache: true
+    validator: "LabelValidator"
+    schema: "label.json"
+    providers:
+      - groq
+      - gemini
+  onboarding:
+    cache: true
+    validator: "OnboardingValidator"
+    schema: "onboarding.json"
+    providers:
+      - groq
+      - gemini
+  sanitize_transcript:
+    cache: true
+    validator: "SanitizeTranscriptValidator"
+    schema: "sanitize_transcript.json"
+    providers:
+      - groq
+      - gemini
+  generate_context_question:
+    cache: true
+    validator: "GenerateContextQuestionValidator"
+    schema: "generate_context_question.json"
+    providers:
+      - groq
+      - gemini
+  joint_summary:
+    cache: true
+    validator: "JointSummaryValidator"
+    schema: "joint_summary.json"
+    providers:
+      - groq
+      - gemini
+  graph:
+    cache: true
+    validator: "GraphRAGValidator"
+    schema: "rag.json"
+    providers:
+      - openrouter
+      - nvidia
+      - gemini
+      - groq
+

@@ -75,7 +75,7 @@ export function useGraphSocket(token, initialGraph) {
           base = `${isHttps ? 'wss:' : 'ws:'}//${base}`;
         }
       }
-      const wsUrl = `${base.replace(/\/$/, '')}/ws/${token}`;
+      const wsUrl = `${base.replace(/\/$/, '')}/api/ws/${token}`;
 
       // Prevent duplicate connection attempts if already open or connecting
       if (

@@ -64,6 +64,10 @@ from typing import Optional
 
 @router.websocket("/ws")
 @router.websocket("/ws/{token}")
+async def legacy_websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
+    logger.warning("Deprecated WebSocket route '/ws' accessed. Redirecting internally to '/api/ws'. Update client to point to '/api/ws'.")
+    await websocket_endpoint(websocket, token)
+
 @router.websocket("/api/ws")
 @router.websocket("/api/ws/{token}")
 async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):

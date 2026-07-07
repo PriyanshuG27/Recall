@@ -45,7 +45,7 @@ function buildGraph(items, W = 900, H = 600, tagPortraits = {}) {
   const hubNodes = [];
   let seq = 1;
   Object.entries(tagBuckets)
-    .filter(([, ids]) => ids.length >= 3)
+    .filter(([tag, ids]) => ids.length >= 3 && tagPortraits[tag] !== undefined)
     .sort((a, b) => b[1].length - a[1].length)
     .forEach(([tag, memberIds]) => {
       // Compute last activity from member items' created_at

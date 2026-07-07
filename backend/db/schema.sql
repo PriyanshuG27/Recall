@@ -313,3 +313,16 @@ CREATE TABLE IF NOT EXISTS ai_decision_logs (
 
 CREATE INDEX IF NOT EXISTS idx_ai_decision_logs_user_id ON ai_decision_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_decision_logs_created_at ON ai_decision_logs(created_at);
+
+-- 21. ACTIVE HUBS TABLE (Thematic visual hubs computed daily)
+CREATE TABLE IF NOT EXISTS active_hubs (
+    id             SERIAL PRIMARY KEY,
+    user_id        INT REFERENCES users(id) ON DELETE CASCADE,
+    tag            VARCHAR(100) NOT NULL,
+    last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_active_hubs_user ON active_hubs(user_id);
+

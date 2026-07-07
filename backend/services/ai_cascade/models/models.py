@@ -111,3 +111,32 @@ class RAGResult(BaseAIResult):
     answer: str
     source_documents: List[Dict[str, Any]] = Field(default_factory=list)
 
+
+class LabelResult(BaseAIResult):
+    label: str
+
+
+class OnboardingResult(BaseAIResult):
+    summary: str
+    tags: List[str] = Field(default_factory=list)
+
+
+class OCRCleanupResult(BaseAIResult):
+    urls: List[str] = Field(default_factory=list)
+    is_only_links: bool = False
+
+
+class SanitizeTranscriptResult(BaseAIResult):
+    transcript: str
+
+
+class GenerateContextQuestionResult(BaseAIResult):
+    context_prompt: str
+
+
+class JointSummaryResult(BaseAIResult):
+    title: str
+    summary: str
+    context_prompt: Optional[str] = None
+
+
