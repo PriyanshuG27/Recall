@@ -100,10 +100,13 @@ async def extract_and_resolve_entities(item_id: int, user_id: int, text: str, db
             if not raw_res:
                 raise ValueError("AICascade call returned empty text.")
 
-            # Clean JSON markdown blocks if present
-            cleaned = re.sub(r"^```json\s*", "", raw_res.strip(), flags=re.IGNORECASE)
-            cleaned = re.sub(r"\s*```$", "", cleaned.strip(), flags=re.IGNORECASE)
-            data = json.loads(cleaned)
+            # Use robust balanced JSON parsing from BaseValidator to handle leading/trailing conversational text
+            from backend.services.ai_cascade.validators.base import BaseValidator
+            class EntityExtractorValidator(BaseValidator):
+                def validate(self, output: Dict[str, Any]) -> bool:
+                    return True
+
+            data = EntityExtractorValidator().parse_json(raw_res)
 
             extracted_entities = data.get("entities") or []
             extracted_relationships = data.get("relationships") or []

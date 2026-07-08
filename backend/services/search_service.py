@@ -274,10 +274,13 @@ async def rewrite_search_query(query: str) -> Tuple[str, List[str]]:
         if not raw_res:
             raise ValueError("Empty response from model.")
 
-        # Clean JSON markdown blocks if present
-        cleaned = re.sub(r"^```json\s*", "", raw_res.strip(), flags=re.IGNORECASE)
-        cleaned = re.sub(r"\s*```$", "", cleaned.strip(), flags=re.IGNORECASE)
-        data = json.loads(cleaned)
+        # Use robust balanced JSON parsing from BaseValidator
+        from backend.services.ai_cascade.validators.base import BaseValidator
+        class QueryRewriterValidator(BaseValidator):
+            def validate(self, output: Dict[str, Any]) -> bool:
+                return True
+
+        data = QueryRewriterValidator().parse_json(raw_res)
 
         rewritten = data.get("rewritten_query", "").strip() or query
         synonyms_raw = data.get("synonyms") or []
@@ -398,7 +401,7 @@ async def hybrid_search(
         chunk_vector AS (
             SELECT item_id AS id, ROW_NUMBER() OVER (ORDER BY min_row_num) as rank
             FROM (
-                SELECT c.item_id, MIN(row_num) as min_row_num
+                SELECT sub.item_id, MIN(row_num) as min_row_num
                 FROM (
                     SELECT c.item_id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> %s::vector) as row_num
                     FROM item_chunks c
