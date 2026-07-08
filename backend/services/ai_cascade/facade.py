@@ -543,7 +543,18 @@ class AICascade:
                 timeout=15.0
             )
             if res:
-                return self._strip_thinking(res).strip()
+                raw = self._strip_thinking(res).strip()
+                # The prompt now requests a JSON object {"transcript": "..."}.
+                # Parse it; fall back to treating the whole response as plain text
+                # if the model ignored the format instruction.
+                try:
+                    import json as _json
+                    parsed = _json.loads(raw)
+                    if isinstance(parsed, dict) and "transcript" in parsed:
+                        return str(parsed["transcript"]).strip()
+                except Exception:
+                    pass
+                return raw
         except Exception as e:
             logger.warning("Dynamic transcript sanitization failed: %s. Falling back to original text.", e)
             

@@ -242,3 +242,35 @@ def test_cookie_conversion_helper(tmp_path):
 
 def test_cookie_conversion_missing_file():
     assert _convert_cookies_json_to_netscape("no_such_file.json", "out.txt") is False
+
+
+@pytest.mark.asyncio
+async def test_try_cobalt_api_key_handling(monkeypatch):
+    """Verify that _try_cobalt includes the API-Key in Authorization header if set."""
+    from backend.services.youtube_ingester import _try_cobalt
+    from backend.config import settings
+
+    captured_headers = {}
+
+    async def mock_post(*args, **kwargs):
+        nonlocal captured_headers
+        captured_headers = kwargs.get("headers", {})
+        mock_resp = mock.Mock()
+        mock_resp.status_code = 200
+        mock_resp.json = mock.Mock(return_value={"status": "stream", "url": "https://cdn.example.com/audio.mp3"})
+        return mock_resp
+
+    monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
+
+    # Case 1: COBALT_API_KEY is not set
+    monkeypatch.setattr(settings, "COBALT_API_KEY", None)
+    res = await _try_cobalt("https://instagram.com/reel/123", "https://cobalt.example.com")
+    assert res == "https://cdn.example.com/audio.mp3"
+    assert "Authorization" not in captured_headers
+
+    # Case 2: COBALT_API_KEY is set
+    monkeypatch.setattr(settings, "COBALT_API_KEY", "super-secret-key")
+    res = await _try_cobalt("https://instagram.com/reel/123", "https://cobalt.example.com")
+    assert res == "https://cdn.example.com/audio.mp3"
+    assert captured_headers.get("Authorization") == "Api-Key super-secret-key"
+

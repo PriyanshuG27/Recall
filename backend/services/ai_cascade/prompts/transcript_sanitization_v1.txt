@@ -13,4 +13,8 @@ Here are examples of common phonetic corrections:
 
 Correct any other brand names or tools based on the context of the sentence (e.g. if a tool is described as a background SVG shape generator, correct its name to 'Haikei').
 
-Return ONLY the fully corrected transcript text. Do not output explanations, greetings, or notes.
+You MUST respond with a valid JSON object containing a single key "transcript" whose value is the fully corrected transcript text.
+Do not include explanations, greetings, or notes — only the JSON object.
+
+Example response format:
+{"transcript": "The corrected transcript text goes here."}

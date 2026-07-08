@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     VITE_BOT_USERNAME: str | None = None
     HF_TOKEN: str | None = None
     COBALT_API_URL: str | None = None
+    COBALT_API_KEY: str | None = None
     BROWSER_FOR_COOKIES: str | None = None
     IG_COOKIES_B64: str | None = None
 

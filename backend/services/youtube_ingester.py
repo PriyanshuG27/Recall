@@ -300,6 +300,7 @@ async def _try_cobalt(url: str, cobalt_api_url: str) -> str | None:
     cobalt_api_url should be the base URL of the instance, e.g. https://cobalt.example.com
     """
     import httpx
+    from backend.config import settings
     endpoint = cobalt_api_url.rstrip("/") + "/"
     payload = {
         "url": url,
@@ -310,6 +311,11 @@ async def _try_cobalt(url: str, cobalt_api_url: str) -> str | None:
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
+    
+    cobalt_api_key = getattr(settings, "COBALT_API_KEY", None)
+    if cobalt_api_key:
+        headers["Authorization"] = f"Api-Key {cobalt_api_key}"
+
     logger.info("  [Instagram Ingestion] Submitting URL to Cobalt API endpoint: %s", endpoint)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:

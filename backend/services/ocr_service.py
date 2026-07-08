@@ -14,7 +14,7 @@ import logging
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from typing import Union, Optional
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image
 
 # Set env vars before any paddle import (must be done at module level in
 # the *worker* process — these are inherited when the pool is forked/spawned).
@@ -64,8 +64,11 @@ def _get_ocr_executor() -> ProcessPoolExecutor:
 
 def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
     """
-    Performs PIL preprocessing, OpenCV QR code detection, and PaddleOCR
-    with confidence filtering on image bytes. Runs entirely in memory.
+    Performs QR code detection and PaddleOCR on image bytes.
+    Runs entirely in memory. Preprocessing is intentionally minimal:
+    PP-OCRv5 is a neural network that performs its own internal preprocessing
+    — aggressive binarization or contrast enhancement destroys the features
+    it relies on and results in 0 characters extracted.
     """
     import numpy as np
     import cv2
@@ -74,63 +77,45 @@ def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
     except Exception as img_err:
         logger.error("Failed to open image bytes in OCR preprocessing: %s", img_err)
         return {"ocr_text": None, "trigger_gemini_fallback": True}
-    
-    # 1. Detect QR code URL first using OpenCV on original image
+
+    # Convert to RGB numpy array (consistent colour space for all inputs)
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    img_np = np.array(image)
+
+    # 1. Detect QR code URL on the original image
     qr_url = None
     try:
-        open_cv_image = np.array(image)
-        if len(open_cv_image.shape) == 3 and open_cv_image.shape[2] == 3:
-            open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
-        elif len(open_cv_image.shape) == 3 and open_cv_image.shape[2] == 4:
-            open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGBA2BGR)
-            
+        bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
         detector = cv2.QRCodeDetector()
-        data, _, _ = detector.detectAndDecode(open_cv_image)
+        data, _, _ = detector.detectAndDecode(bgr)
         if data and data.strip().lower().startswith(("http://", "https://", "www.")):
             qr_url = data.strip()
             logger.info("Successfully extracted QR code URL: %s", qr_url)
     except Exception as qr_err:
         logger.warning("In-memory QR code detection failed: %s", qr_err)
-        
-    # 2. PIL Image Preprocessing — adaptive for light AND dark backgrounds
-    # np and cv2 are already imported above inside this function
 
-    # Convert to numpy grayscale for brightness analysis
-    gray_np = np.array(image.convert('L'))
-    mean_brightness = float(gray_np.mean())
+    # 2. Minimal preprocessing — upscale only if image is very small.
+    #    PP-OCRv5 handles contrast, noise, and binarization internally.
+    h, w = img_np.shape[:2]
+    if w < 640:
+        scale = 1280.0 / w
+        img_np = cv2.resize(img_np, (1280, int(h * scale)), interpolation=cv2.INTER_CUBIC)
 
-    # B. Resize if width < 800px before heavy processing
-    if image.width < 800:
-        ratio = 1200.0 / image.width
-        image = image.resize((1200, int(image.height * ratio)), Image.Resampling.LANCZOS)
-        gray_np = np.array(image.convert('L'))
+    # Convert RGB → BGR for OpenCV/PaddleOCR
+    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
-    # C. Enhance contrast slightly
-    image_l = ImageEnhance.Contrast(image.convert('L')).enhance(1.5)
-    image_l = image_l.filter(ImageFilter.SHARPEN)
-    gray_np = np.array(image_l)
-
-    # D. Adaptive thresholding (handles uneven lighting far better than fixed 128)
-    #    For dark-background images (mean < 128), invert first so text becomes dark on white
-    if mean_brightness < 128:
-        gray_np = 255 - gray_np
-
-    binary_np = cv2.adaptiveThreshold(
-        gray_np, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        blockSize=15, C=8
-    )
-    
-    # 3. PaddleOCR with confidence filtering (>= 60%)
     high_conf_words = []
     try:
         ocr_client = get_paddle_client()
-        # Use the preprocessed binary image; ensure 3 channels (BGR) for PaddleOCR
-        img_np = cv2.cvtColor(binary_np, cv2.COLOR_GRAY2BGR)
-            
-        result = ocr_client.ocr(img_np)
-        
+        result = ocr_client.ocr(img_bgr)
+
+        # Temporary INFO log to diagnose PP-OCRv5 output format
+        logger.info("PaddleOCR raw result type=%s len=%s first=%s",
+                    type(result).__name__,
+                    len(result) if isinstance(result, list) else "n/a",
+                    repr(result[0])[:400] if isinstance(result, list) and result else "empty")
+
         if isinstance(result, list) and len(result) > 0 and result[0]:
             for line in result[0]:
                 if isinstance(line, (list, tuple)) and len(line) > 1:
@@ -140,19 +125,15 @@ def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
                         conf = info[1]
                         if isinstance(text, str) and isinstance(conf, (int, float)):
                             if conf >= 0.60 and text.strip():
-                                words = text.strip().split()
-                                high_conf_words.extend(words)
+                                high_conf_words.extend(text.strip().split())
     except Exception as ocr_err:
         logger.error("In-memory PaddleOCR execution failed: %s", ocr_err)
-        
+
     ocr_result_text = " ".join(high_conf_words)
-    
+
     # Append QR code URL to OCR text if found
     if qr_url:
-        if ocr_result_text:
-            ocr_result_text = ocr_result_text + "\n" + qr_url
-        else:
-            ocr_result_text = qr_url
+        ocr_result_text = (ocr_result_text + "\n" + qr_url).strip() if ocr_result_text else qr_url
 
     # 4. Fallback trigger check (fewer than 10 words and no QR URL)
     total_words = len(ocr_result_text.split())
