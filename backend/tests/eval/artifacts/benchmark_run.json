@@ -3,62 +3,62 @@
     "precision_at_1": 80.0,
     "recall_at_3": 100.0,
     "mrr": 0.888888888888889,
-    "avg_latency_seconds": 0.0035236333302843073,
+    "avg_latency_seconds": 0.0030888600003284713,
     "success_rate_percent": 100.0
   },
   "Baseline RRF (With Rewrite)": {
     "precision_at_1": 86.66666666666667,
     "recall_at_3": 100.0,
     "mrr": 0.9222222222222223,
-    "avg_latency_seconds": 0.0030528866685926915,
+    "avg_latency_seconds": 0.002857606667870035,
     "success_rate_percent": 100.0
   },
   "Xenova/ms-marco (No Rewrite)": {
     "precision_at_1": 100.0,
     "recall_at_3": 100.0,
     "mrr": 1.0,
-    "avg_latency_seconds": 0.18808634666493163,
-    "peak_ram_increase_mb": 135.25390625,
+    "avg_latency_seconds": 0.20738281999947503,
+    "peak_ram_increase_mb": 134.9140625,
     "success_rate_percent": 100.0
   },
   "Xenova/ms-marco (With Rewrite)": {
     "precision_at_1": 100.0,
     "recall_at_3": 100.0,
     "mrr": 1.0,
-    "avg_latency_seconds": 0.18705614000015583,
-    "peak_ram_increase_mb": 135.25390625,
+    "avg_latency_seconds": 0.151187773332155,
+    "peak_ram_increase_mb": 134.9140625,
     "success_rate_percent": 100.0
   },
   "BAAI/bge-rerank (No Rewrite)": {
     "precision_at_1": 100.0,
     "recall_at_3": 100.0,
     "mrr": 1.0,
-    "avg_latency_seconds": 1.2602735733341737,
-    "peak_ram_increase_mb": 1182.67578125,
+    "avg_latency_seconds": 1.173353406666623,
+    "peak_ram_increase_mb": 658.2734375,
     "success_rate_percent": 100.0
   },
   "BAAI/bge-rerank (With Rewrite)": {
     "precision_at_1": 100.0,
     "recall_at_3": 100.0,
     "mrr": 1.0,
-    "avg_latency_seconds": 0.8038979733323989,
-    "peak_ram_increase_mb": 1182.67578125,
+    "avg_latency_seconds": 0.7090616333337191,
+    "peak_ram_increase_mb": 658.2734375,
     "success_rate_percent": 100.0
   },
   "jinaai/jina-rer (No Rewrite)": {
     "precision_at_1": 100.0,
     "recall_at_3": 100.0,
     "mrr": 1.0,
-    "avg_latency_seconds": 0.7408530533313751,
-    "peak_ram_increase_mb": 0.0,
+    "avg_latency_seconds": 0.6236992400023155,
+    "peak_ram_increase_mb": 102.7578125,
     "success_rate_percent": 100.0
   },
   "jinaai/jina-rer (With Rewrite)": {
     "precision_at_1": 100.0,
     "recall_at_3": 100.0,
     "mrr": 1.0,
-    "avg_latency_seconds": 0.6399247133328269,
-    "peak_ram_increase_mb": 0.0,
+    "avg_latency_seconds": 0.528976273331015,
+    "peak_ram_increase_mb": 102.7578125,
     "success_rate_percent": 100.0
   }
 }

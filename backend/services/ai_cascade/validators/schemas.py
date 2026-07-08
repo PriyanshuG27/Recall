@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, AliasChoices
 from typing import List, Optional, Dict, Any
 
 class SummaryValidatorModel(BaseModel):
@@ -17,7 +17,7 @@ class QuizValidatorModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
     question: str = Field(..., min_length=5)
     options: List[str] = Field(..., min_length=2)
-    correct_index: int
+    correct_index: int = Field(..., validation_alias=AliasChoices("correct_index", "answer_index"))
     explanation: Optional[str] = None
 
 class OCRValidatorModel(BaseModel):

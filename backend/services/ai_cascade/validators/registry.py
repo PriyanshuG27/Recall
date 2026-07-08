@@ -17,8 +17,23 @@ from backend.services.ai_cascade.validators.schemas import (
     JointSummaryValidatorModel
 )
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SummaryValidator(BaseValidator):
+    def auto_repair(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        repaired = False
+        if "tags" not in data or data["tags"] is None:
+            data["tags"] = []
+            repaired = True
+        if "key_points" not in data or data["key_points"] is None:
+            data["key_points"] = []
+            repaired = True
+        if repaired:
+            logger.debug("validator_repair_applied validator=SummaryValidator repair=DEFAULT_OPTIONAL")
+        return data
+
     def validate(self, output: Dict[str, Any]) -> bool:
         try:
             SummaryValidatorModel(**output)
@@ -60,6 +75,12 @@ class GraphRAGValidator(BaseValidator):
         return True
 
 class QuizValidator(BaseValidator):
+    def auto_repair(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        if "answer_index" in data and "correct_index" not in data:
+            data["correct_index"] = data["answer_index"]
+            logger.debug("validator_repair_applied validator=QuizValidator repair=FIELD_ALIAS")
+        return data
+
     def validate(self, output: Dict[str, Any]) -> bool:
         try:
             QuizValidatorModel(**output)

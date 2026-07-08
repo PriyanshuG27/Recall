@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -29,6 +30,8 @@ from backend.services.ai_cascade.events.event_bus import (
     ProviderFailed, ExecutionSucceeded, ExecutionFailed
 )
 from backend.services.ai_cascade.telemetry.cost_manager import CostManager
+
+logger = logging.getLogger(__name__)
 
 
 RESULT_CLASSES = {
@@ -184,14 +187,40 @@ class ExecutionEngine:
                         latency = (time.perf_counter() - t0) * 1000.0
 
                         if raw_response is not None:
-                            # Clean and parse JSON response via the validator
-                            parsed_data = validator.parse_json(raw_response)
-                            validator.validate(parsed_data)
+                            # 1. Parse JSON
+                            try:
+                                parsed_data = validator.parse_json(raw_response)
+                            except OutputValidationError as p_err:
+                                logger.warning("json_parse_failure provider=%s model=%s error=%s", provider_name, model_id, p_err)
+                                raise p_err
+
+                            # 2. Auto-repair
+                            repaired_data = validator.auto_repair(parsed_data)
+                            if repaired_data != parsed_data:
+                                # Determine repair type based on changes
+                                # If answer_index was renamed: FIELD_ALIAS. If default tags added: DEFAULT_OPTIONAL.
+                                repair_type = "REMOVE_UNKNOWN"
+                                if "correct_index" in repaired_data and "correct_index" not in parsed_data:
+                                    repair_type = "FIELD_ALIAS"
+                                elif len(repaired_data.get("tags", [])) != len(parsed_data.get("tags", [])) or \
+                                     len(repaired_data.get("key_points", [])) != len(parsed_data.get("key_points", [])):
+                                    repair_type = "DEFAULT_OPTIONAL"
+                                logger.debug("validator_repair_applied validator=%s repair=%s", validator.__class__.__name__, repair_type)
+
+                            # 3. Validate
+                            try:
+                                validator.validate(repaired_data)
+                            except OutputValidationError as v_err:
+                                logger.warning("validation_failure provider=%s model=%s error=%s", provider_name, model_id, v_err)
+                                raise v_err
 
                             # Success trigger -> report to ProviderManager
                             await self.provider_manager.report_success(provider_name)
                             context.status = AIState.SUCCEEDED
                             context.finished_at = datetime.utcnow()
+
+                            if len(context.attempts) > 0:
+                                logger.info("retry_succeeded provider=%s model=%s attempts=%d", provider_name, model_id, len(context.attempts))
 
                             prompt_tokens = CostManager.estimate_tokens(system_prompt or "") + CostManager.estimate_tokens(user_prompt or "")
                             completion_tokens = CostManager.estimate_tokens(raw_response or "")
@@ -236,7 +265,7 @@ class ExecutionEngine:
                             }
                             
                             # Pack parsed variables (e.g. summary, tags, key_points)
-                            for key, val in parsed_data.items():
+                            for key, val in repaired_data.items():
                                 fields[key] = val
 
                             return result_cls(**fields)
@@ -281,4 +310,5 @@ class ExecutionEngine:
             context.status = AIState.FAILED
             context.finished_at = datetime.utcnow()
             await event_bus.publish(ExecutionFailed(request_id=context.request_id, error=str(last_error)))
+            logger.error("retry_exhausted request_id=%s attempts=%d error=%s", context.request_id, len(context.attempts), last_error)
             raise ProviderError(f"All providers in the plan failed. Last error: {last_error}")
