@@ -20,6 +20,15 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
+
+> [!IMPORTANT]
+> **PaddleOCR Version Requirements:**
+> To guarantee local OCR compatibility, install the following specific versions of the Paddle libraries:
+> - `paddlepaddle==3.2.1` (or `paddlepaddle-gpu` if GPU is available)
+> - `paddleocr==3.4.1`
+> - `paddlex==3.4.3` (automatically installed as a dependency of `paddleocr`)
+> Using these versions is required as the result parser in `ocr_service.py` is configured to handle the PaddleX dictionary output format.
+
 cp .env.example .env.local
 uvicorn backend.main:app --reload --port 8000
 ```

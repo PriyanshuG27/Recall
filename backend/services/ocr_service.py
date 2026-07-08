@@ -48,18 +48,45 @@ def get_paddle_client():
         if not check_paddleocr_available():
             raise RuntimeError("PaddleOCR or PaddlePaddle is not installed/available.")
         from paddleocr import PaddleOCR
-        try:
-            # Instantiate with silent logging to prevent stdout pollution
-            _paddle_client = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
-        except Exception:
-            _paddle_client = PaddleOCR(use_angle_cls=True, lang="en")
+        # Disable document-level preprocessing (UVDoc unwarping, doc orientation,
+        # textline orientation) — these are designed for scanned paper docs and
+        # actively degrade screenshot / social-media image OCR.
+        # Only the core detect+recognise pipeline is needed for UI screenshots.
+        for kwargs in [
+            # 1. New version settings (disable document / orientation stages)
+            dict(
+                lang="en",
+                show_log=False,
+                use_textline_orientation=False,
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+            ),
+            # 2. Older version settings (disable angle classification)
+            dict(
+                lang="en",
+                show_log=False,
+                use_angle_cls=False,
+            ),
+            # 3. Bare minimum fallback
+            dict(lang="en"),
+        ]:
+            try:
+                _paddle_client = PaddleOCR(**kwargs)
+                break
+            except Exception:
+                continue
+        if _paddle_client is None:
+            raise RuntimeError("Failed to initialise PaddleOCR with any known parameter set.")
     return _paddle_client
 
 def _get_ocr_executor() -> ProcessPoolExecutor:
     """Returns the module-level ProcessPoolExecutor, creating it if needed."""
     global _ocr_executor
     if _ocr_executor is None:
-        _ocr_executor = ProcessPoolExecutor(max_workers=1)
+        import os
+        is_prod = os.environ.get("ENV") == "production"
+        max_workers = 2 if is_prod else 1
+        _ocr_executor = ProcessPoolExecutor(max_workers=max_workers)
     return _ocr_executor
 
 def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
@@ -110,22 +137,27 @@ def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
         ocr_client = get_paddle_client()
         result = ocr_client.ocr(img_bgr)
 
-        # Temporary INFO log to diagnose PP-OCRv5 output format
-        logger.info("PaddleOCR raw result type=%s len=%s first=%s",
-                    type(result).__name__,
-                    len(result) if isinstance(result, list) else "n/a",
-                    repr(result[0])[:400] if isinstance(result, list) and result else "empty")
-
         if isinstance(result, list) and len(result) > 0 and result[0]:
-            for line in result[0]:
-                if isinstance(line, (list, tuple)) and len(line) > 1:
-                    info = line[1]
-                    if isinstance(info, (list, tuple)) and len(info) > 1:
-                        text = info[0]
-                        conf = info[1]
-                        if isinstance(text, str) and isinstance(conf, (int, float)):
-                            if conf >= 0.60 and text.strip():
-                                high_conf_words.extend(text.strip().split())
+            first_res = result[0]
+            if isinstance(first_res, dict):
+                # PaddleX / PP-Structure output format
+                rec_texts = first_res.get("rec_texts", [])
+                rec_scores = first_res.get("rec_scores", [])
+                for text, conf in zip(rec_texts, rec_scores):
+                    if isinstance(text, str) and isinstance(conf, (int, float)):
+                        if conf >= 0.60 and text.strip():
+                            high_conf_words.extend(text.strip().split())
+            else:
+                # Standard PaddleOCR nested list output format
+                for line in first_res:
+                    if isinstance(line, (list, tuple)) and len(line) > 1:
+                        info = line[1]
+                        if isinstance(info, (list, tuple)) and len(info) > 1:
+                            text = info[0]
+                            conf = info[1]
+                            if isinstance(text, str) and isinstance(conf, (int, float)):
+                                if conf >= 0.60 and text.strip():
+                                    high_conf_words.extend(text.strip().split())
     except Exception as ocr_err:
         logger.error("In-memory PaddleOCR execution failed: %s", ocr_err)
 
