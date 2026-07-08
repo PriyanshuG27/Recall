@@ -676,7 +676,7 @@ async def hybrid_search(
     merge_rate = (len(winners) - len(item_to_indices)) / len(winners) if winners else 0.0
     avg_words = sum(len(w.get("expanded_context", "").split()) for w in winners) / len(winners) if winners else 0.0
     
-    logger.debug(
+    logger.info(
         "Dynamic Context Expansion Metrics: Avg Word Count: %.2f | Latency: %.2f ms | Merge Rate: %.2f%%",
         avg_words, latency * 1000, merge_rate * 100
     )
