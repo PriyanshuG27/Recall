@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     IG_COOKIES_B64: str | None = None
 
     ENV: str = "development"
+    RUN_WORKER_INLINE: bool = True
     USE_NEW_CASCADE: bool = True
     ALLOW_PRIVATE_IPS: bool = False
     CACHE_MAX_ENTRIES: int = 1000

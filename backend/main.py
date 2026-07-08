@@ -232,12 +232,12 @@ async def lifespan(app: FastAPI):
         from backend.services.reranker import reranker_service
         await asyncio.to_thread(reranker_service.preload)
 
-    # Start the background task worker loop (skipped in test mode to prevent test suites from hanging)
+    # Start the background task worker loop (skipped if RUN_WORKER_INLINE is False or in test mode)
     import sys
-    if settings.ENV != "test" and "pytest" not in sys.modules:
+    if settings.ENV != "test" and "pytest" not in sys.modules and settings.RUN_WORKER_INLINE:
         from backend.worker import start_worker_task
         app.state.worker_task = asyncio.create_task(start_worker_task())
-        logger.info("Recall task worker loop started in background.")
+        logger.info("Recall task worker loop started in background (inline).")
 
     # Auto-retry recent DLQ tasks on startup (limit 5, failed < 24h ago)
     try:
