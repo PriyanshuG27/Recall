@@ -142,6 +142,7 @@ async def extract_and_resolve_entities(item_id: int, user_id: int, text: str, db
                     if row:
                         entity_id = row[0]
                         existing_desc = row[1]
+                        logger.info("Entity resolution exact match found: name=%s type=%s -> ID=%d", name, ent_type, entity_id)
                         # Only populate description if current is empty to prevent identity drift
                         if not existing_desc and desc:
                             await cur.execute(
@@ -170,16 +171,18 @@ async def extract_and_resolve_entities(item_id: int, user_id: int, text: str, db
 
                     for cand_id, cand_name, cand_desc, similarity in candidates:
                         if similarity >= settings.ENTITY_RESOLUTION_THRESHOLD:
+                            logger.info("Entity resolution pgvector candidate found: %s (similarity=%.2f)", cand_name, similarity)
                             # Call LLM to confirm if they resolve to the same canonical entity
                             confirm_prompt = (
                                 f"Do these two names in the context of personal notes refer to the same entity?\n"
                                 f"Name A: {name} (Type: {ent_type}, Description: {desc})\n"
                                 f"Name B: {cand_name} (Type: {ent_type}, Description: {cand_desc})\n"
                                 f"Reply with 'YES' or 'NO' only."
-                            )
+                             )
                             confirm_res = await cascade.call_llm(confirm_prompt, temperature=0.0)
                             if confirm_res and "yes" in confirm_res.lower():
                                 entity_id = cand_id
+                                logger.info("AI Cascade confirmed resolution: %s -> %s", name, cand_name)
                                 # Sync description if empty
                                 if not cand_desc and desc:
                                     async with db_conn.cursor() as cur:
