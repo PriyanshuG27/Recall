@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     RRF_VECTOR_WEIGHT: float = 1.0
     RRF_TEXT_WEIGHT: float = 1.0
     ENABLE_QUERY_REWRITING: bool = True
-    QUERY_REWRITE_TIMEOUT_SECONDS: float = 5.0
+    QUERY_REWRITE_TIMEOUT_SECONDS: float = 1.5
     QUERY_REWRITE_MAX_WORDS: int = 2
     TRIGRAM_MIN_SIMILARITY: float = 0.3
 
