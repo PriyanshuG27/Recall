@@ -433,7 +433,7 @@ async def check_user_milestones(user_id: int, chat_id: str) -> None:
                     5: ("pattern_report", "First Pattern Report unlocks. \"Here is what your mind has been working on.\""),
                     15: ("mind_type", "Mind Type unlocks. Computed from graph structure, not a quiz. Check the Profile page on the dashboard to view your cognitive trajectory!"),
                     30: ("predictions", "Monthly Prediction activates. The graph is now deep enough to forecast your next areas of inquiry (first prediction arriving within 48 hours)."),
-                    50: ("compatibility", "Thought Compatibility unlocks. You can now build shared cognitive bridges with friends."),
+                    50: ("hearth", "Hearth unlocks. You can now pair with a friend and grow a shared Hearth space."),
                     100: ("ranked_pulse", "Pulse Score ranked status unlocks. See where you sit relative to density benchmarks."),
                     200: ("public_graph", "Public Graph unlocks. Share a read-only visual map of your mind with the world.")
                 }
@@ -897,7 +897,7 @@ async def process_batch_task(task: Dict[str, Any], user_id: int, chat_id: str) -
                     source_label = it["source_url"] or it["title"] or "Source Item"
                     prefix = f"[Source: {source_label}] "
                     
-                    chunks = chunk_text(raw_text, chunk_size_words=300)
+                    chunks = chunk_text(raw_text)
                     if not chunks:
                         chunks = [raw_text or "(Empty content)"]
                         

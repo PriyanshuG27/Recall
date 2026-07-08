@@ -64,32 +64,97 @@ async def extract_pdf_text(pdf_path: str, cascade: Optional[Any] = None) -> str:
     doc.close()
     return "\n".join(text_parts)
 
-def chunk_text(text: str, chunk_size_words: int = 300) -> List[str]:
+from backend.config import settings
+from backend.services.nlp import get_spacy_sentencizer
+
+def chunk_text(
+    text: str,
+    target_words: int = None,
+    min_words: int = None,
+    max_words: int = None,
+    overlap_sentences: int = None,
+    chunk_size_words: int = None
+) -> List[str]:
     """
-    Split text into sentence-bounded chunks of roughly chunk_size_words (~400 tokens).
+    Split text into sentence-bounded chunks of target_words length,
+    respecting minimum and maximum boundaries, and incorporating a sentence overlap.
+    Uses the blank spaCy English sentencizer to split sentences.
     """
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-    chunks = []
-    current_chunk = []
-    current_word_count = 0
+    # Support backward-compatible chunk_size_words keyword argument
+    if target_words is None and chunk_size_words is not None:
+        target_words = chunk_size_words
+
+    # Fetch configs from settings if not explicitly provided
+    if target_words is None:
+        target_words = settings.CHUNK_TARGET_WORDS
+    if min_words is None:
+        min_words = settings.CHUNK_MIN_WORDS
+    if max_words is None:
+        max_words = settings.CHUNK_MAX_WORDS
+    if overlap_sentences is None:
+        overlap_sentences = settings.CHUNK_OVERLAP_SENTENCES
+
+    nlp = get_spacy_sentencizer()
+    doc = nlp(text.strip())
     
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if not sentence:
+    # Extract sentences as strings and count their words
+    sentences = []
+    for sent in doc.sents:
+        s_text = sent.text.strip()
+        if not s_text:
             continue
-        words = sentence.split()
-        sentence_word_count = len(words)
+        words = s_text.split()
+        if not words:
+            continue
+        sentences.append((s_text, len(words)))
+
+    if not sentences:
+        return []
+
+    chunks = []
+    current_chunk = []  # List of tuples: (sentence_text, word_count)
+    current_word_count = 0
+    just_split = False
+
+    for idx, (sent_text, word_count) in enumerate(sentences):
+        # Check if adding this sentence exceeds the max word count limit
+        if current_chunk and (current_word_count + word_count > max_words):
+            chunks.append(" ".join(s[0] for s in current_chunk))
+            # Handle overlap
+            if overlap_sentences > 0:
+                current_chunk = current_chunk[-overlap_sentences:]
+                current_word_count = sum(s[1] for s in current_chunk)
+            else:
+                current_chunk = []
+                current_word_count = 0
+            just_split = True
+
+        current_chunk.append((sent_text, word_count))
+        just_split = False
+        current_word_count += word_count
+
+        # Check if we hit the target word count
+        if current_word_count >= target_words:
+            chunks.append(" ".join(s[0] for s in current_chunk))
+            if overlap_sentences > 0:
+                current_chunk = current_chunk[-overlap_sentences:]
+                current_word_count = sum(s[1] for s in current_chunk)
+            else:
+                current_chunk = []
+                current_word_count = 0
+            just_split = True
+
+    # Handle the remaining sentences
+    if current_chunk and not just_split:
+        remaining_text = " ".join(s[0] for s in current_chunk)
+        remaining_word_count = current_word_count
         
-        if current_word_count + sentence_word_count > chunk_size_words and current_chunk:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = []
-            current_word_count = 0
-            
-        current_chunk.append(sentence)
-        current_word_count += sentence_word_count
-        
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
+        # If the remaining chunk is too small, merge it into the previous chunk (if it exists)
+        if remaining_word_count < min_words and chunks:
+            prev_chunk = chunks.pop()
+            chunks.append(prev_chunk + " " + remaining_text)
+        else:
+            chunks.append(remaining_text)
         
     return chunks
 

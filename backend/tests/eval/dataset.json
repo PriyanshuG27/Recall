@@ -1,0 +1,257 @@
+{
+  "documents": [
+    {
+      "id": 101,
+      "title": "FastAPI Semaphores",
+      "summary": "FastAPI concurrency can be limited using asyncio.Semaphore. This is a very useful technique to cap concurrent execution.",
+      "tags": ["fastapi", "python"],
+      "embedding_text": "fastapi concurrency asyncio semaphore limit"
+    },
+    {
+      "id": 102,
+      "title": "Stoicism philosophy",
+      "summary": "Stoicism teaches self-control, mental fortitude, and accepting things we cannot control to achieve tranquility.",
+      "tags": ["stoic", "philosophy"],
+      "embedding_text": "stoic control fortitude tranquility philosophy"
+    },
+    {
+      "id": 103,
+      "title": "Obsidian OKF Sync",
+      "summary": "Export and import Markdown vaults using OKF specification. Automatically generates structure and links.",
+      "tags": ["obsidian", "okf"],
+      "embedding_text": "obsidian okf sync export import markdown"
+    },
+    {
+      "id": 104,
+      "title": "HNSW Cosine Search",
+      "summary": "HNSW index enables sub-10 ms approximate nearest-neighbor cosine similarity vector search in pgvector.",
+      "tags": ["database", "vector"],
+      "embedding_text": "hnsw cosine similarity vector search pgvector"
+    },
+    {
+      "id": 105,
+      "title": "SuperMemo SM-2 Algorithm",
+      "summary": "SuperMemo SM-2 spaced repetition updates ease factors and review intervals based on answer quality.",
+      "tags": ["spaced-repetition", "sm2"],
+      "embedding_text": "supermemo sm-2 spaced repetition review intervals"
+    },
+    {
+      "id": 106,
+      "title": "Structlog Logging",
+      "summary": "Structlog provides structured logging with unified context across web servers and background workers.",
+      "tags": ["logging", "structlog"],
+      "embedding_text": "structlog logging structured unified context"
+    },
+    {
+      "id": 107,
+      "title": "PostgreSQL Analytics",
+      "summary": "PostgreSQL telemetry analytics track token usage, cost logs, and request metrics natively.",
+      "tags": ["database", "analytics"],
+      "embedding_text": "postgresql telemetry analytics cost log token"
+    },
+    {
+      "id": 108,
+      "title": "Sentry Crash Reporting",
+      "summary": "Sentry integration provides real-time error tracking and crash reporting in FastAPI application.",
+      "tags": ["sentry", "monitoring"],
+      "embedding_text": "sentry crash error tracking reporting monitoring"
+    },
+    {
+      "id": 109,
+      "title": "Dbmate Migrations",
+      "summary": "Dbmate enables lightweight, language-agnostic raw SQL schema migrations for postgres database.",
+      "tags": ["database", "migrations"],
+      "embedding_text": "dbmate migrations raw sql database postgres"
+    },
+    {
+      "id": 110,
+      "title": "FastEmbed ONNX local model",
+      "summary": "FastEmbed provides ONNX runtime for local text embedding generation without external API dependency.",
+      "tags": ["embedding", "onnx"],
+      "embedding_text": "fastembed onnx local text embedding model"
+    },
+    {
+      "id": 111,
+      "title": "Telegram Webhook Auth",
+      "summary": "Incoming webhooks are verified using Telegram secret token HMAC validation checks.",
+      "tags": ["telegram", "webhook", "security"],
+      "embedding_text": "telegram webhook auth verification hmac token"
+    },
+    {
+      "id": 112,
+      "title": "Fernet Encryption at Rest",
+      "summary": "Cryptographic Fernet encryption shields raw text and refresh tokens in database from unauthorized leaks.",
+      "tags": ["security", "encryption"],
+      "embedding_text": "fernet encryption security database raw text token"
+    },
+    {
+      "id": 113,
+      "title": "FastAPI Rate Limiting",
+      "summary": "Limits requests using sliding window rate limiter backed by Upstash Redis store.",
+      "tags": ["security", "rate-limiting"],
+      "embedding_text": "fastapi rate limiting redis request window"
+    },
+    {
+      "id": 114,
+      "title": "Docker Compose Setup",
+      "summary": "Deploys multi-container setup containing fastapi server, worker, and local db instances.",
+      "tags": ["deployment", "docker"],
+      "embedding_text": "docker compose deployment fastapi worker database"
+    },
+    {
+      "id": 115,
+      "title": "Redis Queue Worker",
+      "summary": "Background jobs are processed asynchronously using Upstash Redis-backed task queue broker.",
+      "tags": ["worker", "queue"],
+      "embedding_text": "redis queue worker task job background"
+    },
+    
+    {
+      "id": 201,
+      "title": "FAST-API Corporate Request Limit Policy",
+      "summary": "Official guidelines detailing the request limits and query quotas for the FAST-API corporate budgeting tool.",
+      "tags": ["corporate", "policy"],
+      "embedding_text": "fast-api corporate request limit policy guidelines query quotas tool"
+    },
+    {
+      "id": 202,
+      "title": "Stoichiometry Reactant Limit Guide",
+      "summary": "A guide on chemistry calculations to identify the limiting reactant using mass balance and stoichiometric ratios.",
+      "tags": ["chemistry", "education"],
+      "embedding_text": "chemistry limiting reactant calculations mass balance stoichiometry guide"
+    },
+    {
+      "id": 203,
+      "title": "Physical Strength Training Exercises",
+      "summary": "Weightlifting routines, muscle hypertrophy building, and physical strength testing benchmarks for athletes.",
+      "tags": ["fitness", "strength"],
+      "embedding_text": "fitness strength training exercises weightlifting hypertrophy athletes"
+    },
+    {
+      "id": 204,
+      "title": "Timber Logging Operations",
+      "summary": "Industrial forestry management, timber logging equipment, raw wood harvesting, and environmental impact regulations.",
+      "tags": ["forestry", "business"],
+      "embedding_text": "forestry logging timber raw wood harvesting operations environment"
+    },
+    {
+      "id": 205,
+      "title": "Raw Organic Cooking Recipes",
+      "summary": "A collection of raw organic food recipes, nutritional analysis, and raw ingredients prep tips.",
+      "tags": ["cooking", "health"],
+      "embedding_text": "cooking organic recipes raw food nutrition ingredients health"
+    },
+    {
+      "id": 206,
+      "title": "Mining Obsidian Gemstones in Minecraft",
+      "summary": "Instructional guide for locating volcanic glass and mining obsidian gemstones in the game Minecraft.",
+      "tags": ["gaming", "obsidian"],
+      "embedding_text": "gaming gemstone obsidian mining volcanic glass minecraft guide"
+    },
+    {
+      "id": 207,
+      "title": "Railway Transit Queue Modeling",
+      "summary": "Operations research queue models for railway passenger transit gates and ticket window bottlenecks.",
+      "tags": ["math", "transit"],
+      "embedding_text": "math transit railway passenger queue bottleneck operations"
+    },
+    {
+      "id": 208,
+      "title": "Cryptography History",
+      "summary": "Historical analysis of Caesar ciphers, Enigma machine mechanics, and early cryptanalysis codebreakers.",
+      "tags": ["history", "cryptography"],
+      "embedding_text": "history cryptography cipher enigma codebreaker machine"
+    },
+    {
+      "id": 209,
+      "title": "Fernet Stock Liqueur Recipe",
+      "summary": "Instructions for brewing the famous Fernet herbal liqueur at home using secret ingredients and base alcohol.",
+      "tags": ["cooking", "liqueur"],
+      "embedding_text": "cooking liqueur fernet recipe herbal ingredients home brewing"
+    },
+    {
+      "id": 210,
+      "title": "Rediscovering Ancient Art History Book",
+      "summary": "Museum exhibition catalog covering pottery and sculptures in history, rediscovering Roman artifacts.",
+      "tags": ["art", "history"],
+      "embedding_text": "art history pottery rediscovering sculptures museum catalog book"
+    }
+  ],
+  "queries": [
+    {
+      "query": "how to limit concurrent requests in fastapi using asyncio",
+      "expected_id": 101,
+      "expected_tags": ["fastapi"]
+    },
+    {
+      "query": "mental strength, self-control and inner peace philosophy",
+      "expected_id": 102,
+      "expected_tags": ["stoic"]
+    },
+    {
+      "query": "syncing markdown vaults formatted as obsidian okf",
+      "expected_id": 103,
+      "expected_tags": ["obsidian", "okf"]
+    },
+    {
+      "query": "high speed similarity searches using hnsw in pgvector",
+      "expected_id": 104,
+      "expected_tags": ["vector"]
+    },
+    {
+      "query": "spaced repetition interval and review ease factors SM-2",
+      "expected_id": 105,
+      "expected_tags": ["sm2"]
+    },
+    {
+      "query": "structured logging configurations inside uvicorn using structlog",
+      "expected_id": 106,
+      "expected_tags": ["logging"]
+    },
+    {
+      "query": "saving logs of token metrics and costs in postgres",
+      "expected_id": 107,
+      "expected_tags": ["analytics"]
+    },
+    {
+      "query": "error tracking and crash reports integrations with sentry",
+      "expected_id": 108,
+      "expected_tags": ["monitoring"]
+    },
+    {
+      "query": "raw SQL migrations using dbmate binary",
+      "expected_id": 109,
+      "expected_tags": ["migrations"]
+    },
+    {
+      "query": "running local fastembed models for text embeddings",
+      "expected_id": 110,
+      "expected_tags": ["embedding"]
+    },
+    {
+      "query": "incoming webhook authentication and secret verification",
+      "expected_id": 111,
+      "expected_tags": ["webhook"]
+    },
+    {
+      "query": "protecting database credentials using Fernet cryptographic keys",
+      "expected_id": 112,
+      "expected_tags": ["encryption"]
+    },
+    {
+      "query": "limiting request frequency on API routers using Redis store",
+      "expected_id": 113,
+      "expected_tags": ["rate-limiting"]
+    },
+    {
+      "query": "multi-container deployments for postgres and fastapi app",
+      "expected_id": 114,
+      "expected_tags": ["deployment"]
+    },
+    {
+      "query": "asynchronous background task brokers and queues",
+      "expected_id": 115,
+      "expected_tags": ["queue"]
+    }
+  ]
+}

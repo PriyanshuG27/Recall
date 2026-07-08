@@ -27,8 +27,6 @@ flowchart TB
 (backend/routes/auth.py)"]
         ITEMS["API Router
 (backend/routes/api.py)"]
-        BRIDGES["Bridges Router
-(backend/routes/bridges.py)"]
         HOOK["Webhook Handler
 (backend/routes/webhook.py)"]
         WS["WebSocket Router
@@ -58,7 +56,6 @@ dead_letter_queue table)]
     TG --> HOOK
     WEB --> AUTH
     WEB --> ITEMS
-    WEB --> BRIDGES
     WEB <--> WS
     EXT --> ITEMS
     SHARE --> ITEMS

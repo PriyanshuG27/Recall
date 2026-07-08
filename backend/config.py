@@ -1,5 +1,6 @@
 import base64
 import re
+import logging
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -47,6 +48,23 @@ class Settings(BaseSettings):
 
     ENV: str = "development"
     USE_NEW_CASCADE: bool = True
+
+    # Reranker settings
+    ENABLE_RERANKING: bool = True
+    RERANK_PRELOAD_ON_STARTUP: bool = True
+    RERANKER_PROVIDER: str = "fastembed"
+    RERANKER_MODEL: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    RERANK_CANDIDATES: int = 20
+    RERANK_TOP_N: int = 5
+    RERANK_TIMEOUT_SECONDS: float = 2.0
+
+    # Contextual Retrieval settings
+    CHUNK_TARGET_WORDS: int = 120
+    CHUNK_MIN_WORDS: int = 80
+    CHUNK_MAX_WORDS: int = 180
+    CHUNK_OVERLAP_SENTENCES: int = 1
+    PARENT_TARGET_WORDS: int = 400
+    MAX_EXPANDED_WORDS: int = 500
 
     # Hub selection parameters
     HUB_FREQUENCY_WEIGHT: float = 1.0
@@ -122,11 +140,71 @@ class Settings(BaseSettings):
 
 
 # Central settings singleton
+class SecretMaskingFilter(logging.Filter):
+    def __init__(self, secrets: list[str] = None):
+        super().__init__()
+        self.secrets = sorted([s for s in (secrets or []) if s], key=len, reverse=True)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not self.secrets:
+            return True
+            
+        def mask_string(val: str) -> str:
+            if not isinstance(val, str):
+                return val
+            masked = val
+            for secret in self.secrets:
+                if len(secret) > 4:
+                    masked = masked.replace(secret, "[REDACTED]")
+            return masked
+
+        if isinstance(record.msg, str):
+            record.msg = mask_string(record.msg)
+            
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {k: (mask_string(v) if isinstance(v, str) else v) for k, v in record.args.items()}
+            elif isinstance(record.args, tuple):
+                record.args = tuple(mask_string(v) if isinstance(v, str) else v for v in record.args)
+                
+        return True
+
+def setup_logging(settings_obj: Settings) -> None:
+    secrets = []
+    if settings_obj:
+        for field in [
+            "TELEGRAM_BOT_TOKEN", "FERNET_KEY", "JWT_SECRET", 
+            "UPSTASH_REDIS_REST_TOKEN", "MODAL_API_TOKEN", 
+            "GROQ_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", 
+            "NVIDIA_API_KEY", "CEREBRAS_API_KEY", "GOOGLE_CLIENT_SECRET"
+        ]:
+            val = getattr(settings_obj, field, None)
+            if val and isinstance(val, str):
+                secrets.append(val)
+                
+    mask_filter = SecretMaskingFilter(secrets)
+    
+    # Configure basic logger root
+    logging.basicConfig(level=logging.INFO)
+    root = logging.getLogger()
+    root.addFilter(mask_filter)
+    for h in root.handlers:
+        h.addFilter(mask_filter)
+        
+    # Apply to existing loggers
+    for logger_name in logging.root.manager.loggerDict:
+        log = logging.getLogger(logger_name)
+        log.addFilter(mask_filter)
+        for h in log.handlers:
+            h.addFilter(mask_filter)
+
 try:
     settings = Settings()
-    if settings and settings.HF_TOKEN:
-        import os
-        os.environ["HF_TOKEN"] = settings.HF_TOKEN
+    if settings:
+        setup_logging(settings)
+        if settings.HF_TOKEN:
+            import os
+            os.environ["HF_TOKEN"] = settings.HF_TOKEN
 except Exception as e:
     # Fail fast on startup if settings are missing or misconfigured
     print(f"CRITICAL CONFIGURATION ERROR on startup: {e}")

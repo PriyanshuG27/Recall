@@ -750,7 +750,15 @@ async def search_items(
             query=req.query
         )
 
-    results = await hybrid_search(req.query, user.id, db)
+    results = await hybrid_search(
+        req.query,
+        user.id,
+        db,
+        source_types=req.source_types,
+        tags=req.tags,
+        start_date=req.start_date,
+        end_date=req.end_date
+    )
     
     # Limit results as requested (up to 5 for summaries mapping)
     results_limited = results[:req.limit]
@@ -778,7 +786,11 @@ async def search_items(
     if req.rag and len(results_limited) >= 1:
         cascade = AICascade()
         try:
+            import time
+            t_rag_start = time.perf_counter()
             answer = await cascade.answer_question(req.query, summaries)
+            t_rag = (time.perf_counter() - t_rag_start) * 1000
+            logger.info(f"[PROFILER] RAG LLM Generation: {t_rag:.1f} ms")
         except Exception as e:
             logger.error("Map-Reduce RAG generation failed: %s", e)
             answer = None
@@ -2672,12 +2684,23 @@ async def import_zip(
     if not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Uploaded file must be a ZIP archive.")
 
+    # 1. Size Validation (Limit to 25MB)
+    MAX_ZIP_SIZE = 25 * 1024 * 1024
     try:
-        contents = await file.read()
-        zip_buffer = io.BytesIO(contents)
+        contents = await file.read(MAX_ZIP_SIZE + 1)
+        if len(contents) > MAX_ZIP_SIZE:
+            raise HTTPException(status_code=413, detail="Uploaded file exceeds the maximum size limit of 25MB.")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Failed to read uploaded ZIP file: %s", e)
         raise HTTPException(status_code=400, detail="Failed to read uploaded ZIP file.")
+
+    # 2. Magic Bytes Header Check (ZIP magic bytes: PK\x03\x04)
+    if not contents.startswith(b"PK\x03\x04"):
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid ZIP archive (magic bytes mismatch).")
+
+    zip_buffer = io.BytesIO(contents)
 
     imported_count = 0
     try:
@@ -2733,7 +2756,7 @@ async def import_zip(
                     item_id = row[0]
 
                     # 3. Text chunking & item_chunks generation for RAG
-                    chunks = chunk_text(raw_text, chunk_size_words=300)
+                    chunks = chunk_text(raw_text)
                     if chunks:
                         for chunk_idx, chunk in enumerate(chunks):
                             chunk_excerpt = chunk[:500]  # Respect db length limits

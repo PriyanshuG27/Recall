@@ -242,3 +242,24 @@ Stoicism teaches self-control and fortitude.
         
         chunk_queries = [query for query, params in mock_db_connection.executed if "INSERT INTO item_chunks" in query]
         assert len(chunk_queries) > 0  # Chunk insertions happened successfully
+
+def test_import_zip_invalid_magic_bytes(client, mock_db_connection):
+    """POST /api/import/zip with a .zip file having non-zip magic bytes returns 400."""
+    payload = {"sub": "123456789", "chat_id": "123456789"}
+    token = generate_jwt(payload, settings.JWT_SECRET)
+
+    files = {"file": ("malicious.zip", b"not a zip file content header", "application/zip")}
+    resp = client.post("/api/import/zip", files=files, cookies={"recall_session": token})
+    assert resp.status_code == 400
+    assert "magic bytes mismatch" in resp.json()["detail"]
+
+def test_import_zip_payload_too_large(client, mock_db_connection):
+    """POST /api/import/zip with a file exceeding 25MB returns 413."""
+    payload = {"sub": "123456789", "chat_id": "123456789"}
+    token = generate_jwt(payload, settings.JWT_SECRET)
+
+    large_content = b"a" * (25 * 1024 * 1024 + 1)
+    files = {"file": ("huge.zip", large_content, "application/zip")}
+    resp = client.post("/api/import/zip", files=files, cookies={"recall_session": token})
+    assert resp.status_code == 413
+    assert "exceeds the maximum size limit" in resp.json()["detail"]

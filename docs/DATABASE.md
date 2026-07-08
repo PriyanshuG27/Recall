@@ -9,7 +9,7 @@
 
 ---
 
-## 1. Schema Inventory (15 Tables)
+## 1. Schema Inventory (13 Tables)
 
 ```mermaid
 erDiagram
@@ -18,7 +18,6 @@ erDiagram
     users ||--o{ reminders : "owns"
     users ||--o{ semantic_hubs : "owns"
     users ||--o{ dead_letter_queue : "owns"
-    users ||--o{ cognitive_bridges : "user_1 / user_2"
     items ||--o{ item_chunks : "partitioned cascade delete"
     quizzes ||--o{ quiz_answers : "tracks"
 
@@ -93,9 +92,9 @@ FOR UPDATE SKIP LOCKED;
 
 ---
 
-## 3. Table Summary (15 Tables)
+## 3. Table Summary (13 Tables)
 
-* **Base Tables (13)**: `users`, `items`, `quizzes`, `reminders`, `semantic_hubs`, `processed_updates`, `dead_letter_queue`, `item_chunks`, `quiz_answers`, `static_domain_centroids`, `cognitive_bridges`, `bridge_invites`, `tag_portraits`.
+* **Base Tables (11)**: `users`, `items`, `quizzes`, `reminders`, `semantic_hubs`, `processed_updates`, `dead_letter_queue`, `item_chunks`, `quiz_answers`, `static_domain_centroids`, `tag_portraits`.
 * **Range Partitions (2)**: `items_y2026m06`, `items_y2026m07` (partitioned on `created_at`).
 
 ---

@@ -42,7 +42,42 @@ class UpstashRedis:
             return msg.replace(settings.UPSTASH_REDIS_REST_TOKEN, "<REDACTED>")
         return msg
 
+    def _hash_key(self, key: str) -> str:
+        if not isinstance(key, str):
+            return key
+        import hashlib
+        parts = key.split(":")
+        hashed_parts = []
+        for part in parts:
+            is_numeric = False
+            if part.isdigit():
+                is_numeric = True
+            elif part.startswith("-") and part[1:].isdigit():
+                is_numeric = True
+                
+            if is_numeric:
+                hashed = hashlib.sha256(part.encode("utf-8")).hexdigest()[:16]
+                hashed_parts.append(hashed)
+            else:
+                hashed_parts.append(part)
+        return ":".join(hashed_parts)
+
     async def _request(self, endpoint: str, json_data, timeout: Optional[float] = None) -> dict | list:
+        # Pre-process json_data to hash keys containing sensitive numeric parts
+        if json_data:
+            if endpoint == "pipeline":
+                if isinstance(json_data, list):
+                    for cmd in json_data:
+                        if isinstance(cmd, list) and len(cmd) > 1:
+                            cmd[1] = self._hash_key(cmd[1])
+                            if len(cmd) > 2 and isinstance(cmd[0], str) and cmd[0].upper() == "BRPOPLPUSH":
+                                cmd[2] = self._hash_key(cmd[2])
+            else:
+                if isinstance(json_data, list) and len(json_data) > 1:
+                    json_data[1] = self._hash_key(json_data[1])
+                    if len(json_data) > 2 and isinstance(json_data[0], str) and json_data[0].upper() == "BRPOPLPUSH":
+                        json_data[2] = self._hash_key(json_data[2])
+
         client = self._get_client()
         import sys
         from unittest.mock import Mock

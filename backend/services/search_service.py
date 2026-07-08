@@ -1,6 +1,6 @@
 import logging
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import httpx
 from psycopg import AsyncConnection
@@ -8,6 +8,33 @@ from psycopg import AsyncConnection
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
+
+def _build_metadata_filters(
+    alias: str,
+    source_types: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+) -> tuple[List[str], List[Any]]:
+    """
+    Constructs clean, parameterized SQL filter conditions and their associated arguments.
+    Uses the table alias explicitly to ensure identical predicates across CTEs.
+    """
+    conditions = []
+    params = []
+    if source_types:
+        conditions.append(f"{alias}.source_type = ANY(%s)")
+        params.append(source_types)
+    if tags:
+        conditions.append(f"{alias}.tags && %s")
+        params.append(tags)
+    if start_date:
+        conditions.append(f"{alias}.created_at >= %s")
+        params.append(start_date.astimezone(timezone.utc))
+    if end_date:
+        conditions.append(f"{alias}.created_at <= %s")
+        params.append(end_date.astimezone(timezone.utc))
+    return conditions, params
 
 _local_model = None
 
@@ -164,44 +191,65 @@ async def _generate_embedding_uncached(text: str) -> List[float]:
 
 
 
-async def hybrid_search(query: str, user_id: int, db: AsyncConnection) -> List[Dict[str, Any]]:
+import time
+
+async def hybrid_search(
+    query: str,
+    user_id: int,
+    db: AsyncConnection,
+    source_types: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+) -> List[Dict[str, Any]]:
     """
     Perform a hybrid search using pgvector (HNSW cosine distance) on both items and item_chunks,
     and pg_trgm (GIN trigram similarity) on items.
-    Combines results using Reciprocal Rank Fusion (RRF) and returns the top 5 matches.
+    Enforces precise database-level metadata filtering dynamically.
+    Combines results using Reciprocal Rank Fusion (RRF) and runs a SOTA reranker step.
     """
     # Step 1: Generate query embedding
+    t_emb_start = time.perf_counter()
     query_embedding = await embed_text(query)
+    t_emb = (time.perf_counter() - t_emb_start) * 1000
 
-    consolidated_query = """
+    is_reranking_active = settings.ENABLE_RERANKING and settings.RERANKER_MODEL != "benchmark_pending"
+    db_limit = settings.RERANK_CANDIDATES if is_reranking_active else settings.RERANK_TOP_N
+
+    # Build dynamic filter constraints using explicit table alias "i"
+    conditions, filter_params = _build_metadata_filters("i", source_types, tags, start_date, end_date)
+    filter_clause = (" AND " + " AND ".join(conditions)) if conditions else ""
+
+    consolidated_query = f"""
         WITH direct_vector AS (
-            SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> %s::vector) as rank
-            FROM items
-            WHERE user_id = %s AND (embedding <=> %s::vector) < 0.8
-            ORDER BY embedding <=> %s::vector
-            LIMIT 20
+            SELECT i.id, ROW_NUMBER() OVER (ORDER BY i.embedding <=> %s::vector) as rank
+            FROM items i
+            WHERE i.user_id = %s AND (i.embedding <=> %s::vector) < 0.8 {filter_clause}
+            ORDER BY i.embedding <=> %s::vector
+            LIMIT %s
         ),
         chunk_vector AS (
             SELECT item_id AS id, ROW_NUMBER() OVER (ORDER BY min_row_num) as rank
             FROM (
-                SELECT item_id, MIN(row_num) as min_row_num
+                SELECT c.item_id, MIN(row_num) as min_row_num
                 FROM (
-                    SELECT item_id, ROW_NUMBER() OVER (ORDER BY embedding <=> %s::vector) as row_num
-                    FROM item_chunks
-                    WHERE user_id = %s AND (embedding <=> %s::vector) < 0.8
+                    SELECT c.item_id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> %s::vector) as row_num
+                    FROM item_chunks c
+                    JOIN items i ON c.item_id = i.id AND c.user_id = i.user_id
+                    WHERE c.user_id = %s AND (c.embedding <=> %s::vector) < 0.8 {filter_clause}
                     LIMIT 50
                 ) sub
                 GROUP BY item_id
             ) sub2
             ORDER BY min_row_num
-            LIMIT 20
+            LIMIT %s
         ),
         combined_vector_ids AS (
             SELECT id, MIN(val_rank) AS final_rank
             FROM (
                 SELECT id, rank AS val_rank FROM direct_vector
                 UNION ALL
-                SELECT id, rank + 20 AS val_rank FROM chunk_vector
+                SELECT id, rank + %s AS val_rank FROM chunk_vector
             ) u
             GROUP BY id
         ),
@@ -210,11 +258,11 @@ async def hybrid_search(query: str, user_id: int, db: AsyncConnection) -> List[D
             FROM combined_vector_ids
         ),
         text_search AS (
-            SELECT id, ROW_NUMBER() OVER (ORDER BY similarity(summary, %s) DESC) as rank
-            FROM items
-            WHERE user_id = %s AND summary %% %s
+            SELECT i.id, ROW_NUMBER() OVER (ORDER BY similarity(summary, %s) DESC) as rank
+            FROM items i
+            WHERE i.user_id = %s AND i.summary %% %s {filter_clause}
             ORDER BY similarity(summary, %s) DESC
-            LIMIT 20
+            LIMIT %s
         ),
         rrf_scores AS (
             SELECT 
@@ -222,27 +270,53 @@ async def hybrid_search(query: str, user_id: int, db: AsyncConnection) -> List[D
                 COALESCE(1.0 / (v.rank + 60), 0.0) + COALESCE(1.0 / (t.rank + 60), 0.0) as rrf_score
             FROM ranked_vector v
             FULL OUTER JOIN text_search t ON v.id = t.id
+        ),
+        best_chunk AS (
+            SELECT DISTINCT ON (item_id) item_id, chunk_text, chunk_index
+            FROM item_chunks
+            WHERE user_id = %s AND (embedding <=> %s::vector) < 0.8
+            ORDER BY item_id, embedding <=> %s::vector
         )
         SELECT 
             i.id, i.title, i.summary, i.source_type, i.source_url, i.tags, i.created_at,
-            r.rrf_score
+            r.rrf_score, i.raw_text, bc.chunk_text, bc.chunk_index
         FROM rrf_scores r
         JOIN items i ON r.id = i.id
+        LEFT JOIN best_chunk bc ON i.id = bc.item_id
         WHERE i.user_id = %s
         ORDER BY r.rrf_score DESC
-        LIMIT 5;
+        LIMIT %s;
     """
 
-    query_params = (
-        query_embedding, user_id, query_embedding, query_embedding,
-        query_embedding, user_id, query_embedding,
-        query, user_id, query, query,
-        user_id
-    )
+    # Duplicated dynamic parameters in the exact placeholder ordering
+    query_params = []
+    
+    # direct_vector
+    query_params.extend([query_embedding, user_id, query_embedding])
+    query_params.extend(filter_params)
+    query_params.extend([query_embedding, db_limit])
+    
+    # chunk_vector
+    query_params.extend([query_embedding, user_id, query_embedding])
+    query_params.extend(filter_params)
+    query_params.extend([db_limit, db_limit])
+    
+    # text_search
+    query_params.extend([query, user_id, query])
+    query_params.extend(filter_params)
+    query_params.extend([query, db_limit])
+    
+    # best_chunk
+    query_params.extend([user_id, query_embedding, query_embedding])
+    
+    # final SELECT
+    query_params.extend([user_id, db_limit])
 
+    t_db_start = time.perf_counter()
     async with db.cursor() as cur:
-        await cur.execute(consolidated_query, query_params)
+        await cur.execute(consolidated_query, tuple(query_params))
         rows = await cur.fetchall()
+        t_db = (time.perf_counter() - t_db_start) * 1000
 
         results = []
         for r in rows:
@@ -255,9 +329,153 @@ async def hybrid_search(query: str, user_id: int, db: AsyncConnection) -> List[D
                 "tags": r[5] if r[5] is not None else [],
                 "created_at": r[6],
                 "score": float(r[7]),
+                "raw_text": r[8] if len(r) > 8 else None,
+                "matched_chunk_text": r[9] if len(r) > 9 else None,
+                "chunk_index": r[10] if len(r) > 10 else None,
             })
 
-    return results
+    # If the database returns 0 candidate matches, skip reranking and return [] immediately
+    if not results:
+        t_rerank = 0.0
+        logger.info(f"[PROFILER] Embedding: {t_emb:.1f} ms | DB Vector/Text Search: {t_db:.1f} ms | Reranker (Bypassed): {t_rerank:.1f} ms")
+        return []
+
+    # Step 2: Rerank Child Chunks
+    t_rerank_start = time.perf_counter()
+    if is_reranking_active:
+        from backend.services.reranker import reranker_service
+        results = await reranker_service.rerank(query, results)
+    t_rerank = (time.perf_counter() - t_rerank_start) * 1000
+    
+    logger.info(f"[PROFILER] Embedding: {t_emb:.1f} ms | DB Vector/Text Search: {t_db:.1f} ms | Reranker: {t_rerank:.1f} ms")
+    
+    # Select winning top results
+    winners = results[:settings.RERANK_TOP_N]
+
+    # Step 3: Dynamic Context Expansion
+    start_time = time.perf_counter()
+    from collections import defaultdict
+    
+    # Group matched chunks by item_id to deduplicate
+    item_to_indices = defaultdict(list)
+    for w in winners:
+        item_id = w["id"]
+        idx = w.get("chunk_index")
+        if idx is not None:
+            item_to_indices[item_id].append(idx)
+            
+    # Plan sibling index queries (fetch from min(matched_idx) - 2 to max(matched_idx) + 2)
+    sql_coords = []
+    for item_id, indices in item_to_indices.items():
+        unique_indices = set()
+        for idx in indices:
+            for sibling_idx in range(max(0, idx - 2), idx + 3):
+                unique_indices.add(sibling_idx)
+        for sibling_idx in sorted(unique_indices):
+            sql_coords.append((item_id, sibling_idx))
+            
+    # Single trip database join for all sibling chunks
+    sibling_chunks = defaultdict(list)
+    if sql_coords:
+        values_placeholders = ", ".join(f"(%s::int, %s::int)" for _ in sql_coords)
+        flat_params = []
+        for item_id, s_idx in sql_coords:
+            flat_params.extend([item_id, s_idx])
+            
+        sibling_query = f"""
+            WITH target_chunks(item_id, chunk_index) AS (
+                VALUES {values_placeholders}
+            )
+            SELECT c.item_id, c.chunk_index, c.chunk_text
+            FROM item_chunks c
+            JOIN target_chunks t ON c.item_id = t.item_id AND c.chunk_index = t.chunk_index
+            ORDER BY c.item_id, c.chunk_index;
+        """
+        async with db.cursor() as cur:
+            await cur.execute(sibling_query, flat_params)
+            sibling_rows = await cur.fetchall()
+            for s_row in sibling_rows:
+                sibling_chunks[s_row[0]].append((s_row[1], s_row[2]))
+
+    # Perform adaptive outward context expansion on sentences using spaCy
+    from backend.services.nlp import get_spacy_sentencizer
+    nlp = get_spacy_sentencizer()
+    
+    for w in winners:
+        item_id = w["id"]
+        matched_idx = w.get("chunk_index")
+        matched_text = w.get("matched_chunk_text") or ""
+        
+        siblings = sibling_chunks[item_id]
+        if siblings and matched_idx is not None:
+            # Sort by chunk_index and join to get contiguous text block
+            sorted_s = sorted(siblings, key=lambda x: x[0])
+            full_text = " ".join(s[1] for s in sorted_s)
+            
+            # Segment into sentences
+            sentences = [sent.text.strip() for sent in nlp(full_text).sents if sent.text.strip()]
+            
+            # Find the starting sentence index range that matches the child chunk
+            matched_indices = []
+            if matched_text:
+                for i, sent in enumerate(sentences):
+                    if sent in matched_text or matched_text in sent:
+                        matched_indices.append(i)
+                        
+            if not matched_indices:
+                matched_indices = [len(sentences) // 2] if sentences else [0]
+                
+            selected_indices = set(matched_indices)
+            left = min(matched_indices) - 1
+            right = max(matched_indices) + 1
+            
+            current_words = sum(len(sentences[i].split()) for i in selected_indices if i < len(sentences))
+            
+            # Outward sentence expansion
+            while current_words < settings.PARENT_TARGET_WORDS:
+                expanded = False
+                if left >= 0:
+                    word_count = len(sentences[left].split())
+                    if current_words + word_count <= settings.MAX_EXPANDED_WORDS:
+                        selected_indices.add(left)
+                        current_words += word_count
+                        left -= 1
+                        expanded = True
+                if right < len(sentences) and current_words < settings.PARENT_TARGET_WORDS:
+                    word_count = len(sentences[right].split())
+                    if current_words + word_count <= settings.MAX_EXPANDED_WORDS:
+                        selected_indices.add(right)
+                        current_words += word_count
+                        right += 1
+                        expanded = True
+                if not expanded:
+                    break
+                    
+            expanded_sentences = [sentences[i] for i in sorted(selected_indices) if i < len(sentences)]
+            w["expanded_context"] = " ".join(expanded_sentences)
+        else:
+            w["expanded_context"] = matched_text
+
+        # Reserved Extension Point: Context Compression / Token Filtering
+        # w["expanded_context"] = await compress_context(w["expanded_context"])
+
+    # Measure and log operational performance metrics at DEBUG level
+    end_time = time.perf_counter()
+    latency = end_time - start_time
+    merge_rate = (len(winners) - len(item_to_indices)) / len(winners) if winners else 0.0
+    avg_words = sum(len(w.get("expanded_context", "").split()) for w in winners) / len(winners) if winners else 0.0
+    
+    logger.debug(
+        "Dynamic Context Expansion Metrics: Avg Word Count: %.2f | Latency: %.2f ms | Merge Rate: %.2f%%",
+        avg_words, latency * 1000, merge_rate * 100
+    )
+
+    # Strip raw_text and temporary chunk_index from results, while keeping matched_chunk_text and expanded_context
+    for r in winners:
+        r.pop("raw_text", None)
+        r.pop("chunk_index", None)
+
+    return winners
 
 
 async def rag_semantic_search(query: str, user_id: int, db: AsyncConnection, limit: int = 12) -> List[Dict[str, Any]]:

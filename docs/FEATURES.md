@@ -32,7 +32,7 @@ Capabilities in **Recall** are classified across 5 status levels:
 | **Dead Letter Queue** | ✅ Production | `services/dlq.py` | Failover table (`dead_letter_queue`) logging failed task payloads with boot auto-retry. |
 | **Google Drive Sync** | ✅ Production | `services/drive_sync.py` | One-click Google Docs backup (`POST /api/drive/sync`) with OAuth2 token refresh & Fernet encryption. |
 | **PWA Share Target** | ✅ Production | `routes/api.py` | Web Share Target API handler (`POST /api/share-target`) for mobile native share sheet integration. |
-| **Cognitive Bridges (`/bridges`)** | 🧪 Active Development | `routes/bridges.py`<br>`pages/Bridges.jsx` | Mind-pairing, synergy score calculation, and Kintsugi gold crack decay simulation. |
+| **Cognitive Bridges** | 💀 Dead Code | None (Superseded by Hearth) | Superseded by Hearth (v1). Compatibility/kintsugi visualization deferred post-launch. |
 | **Branching POC (`/poc/branching`)** | 🧪 Active Development | `pages/BranchingPOC.jsx` | Isolated proof-of-concept for visual node branching on top of the mind graph. |
 | **Nebula Route (`/nebula`)** | ❌ Legacy | `App.jsx:L29` | Hard redirects to `/map`. `Nebula.jsx` component is unrendered legacy code. |
 | **Dashboard Route (`/dashboard`)** | ❌ Legacy | `App.jsx:L280` | Hard redirects to `/archive`. `Dashboard.jsx` component is unrendered legacy code. |

@@ -98,7 +98,6 @@ When you need an answer weeks later, you don't hunt through folders. You ask Rec
 | **Conversational RAG Drawer** | 800x450 GIF | Clicking citation `[1]` triggers smooth 3D camera flight to cited node |
 | **SuperMemo SM-2 Flashcard Room** | 1920x1080 Screenshot (`/drill`) | Active recall testing room with SM-2 interval confidence ratings |
 | **Telegram & Chrome Capture** | 800x450 GIF | 1-click web clipping and instant Telegram voice note processing |
-| **Cognitive Bridges** | 1920x1080 Screenshot (`/bridges`) | Mind-pairing synergy score visualization and Kintsugi gold decay lines |
 
 ---
 
@@ -182,7 +181,6 @@ flowchart TB
         CYLINDER["Glass Archive Cylinder\n(/archive)"]
         FLIGHT["Camera Auto-Flight Engine\n(Citation Badges [1] [2])"]
         DRILL["Active Recall Drill Room\n(SuperMemo SM-2)"]
-        BRIDGES["Cognitive Bridges\n(Kintsugi Gold Decay)"]
     end
 
     TG --> GATEWAY
@@ -214,7 +212,6 @@ flowchart TB
     DB --> CYLINDER
     FLIGHT --> MAP
     DB --> DRILL
-    DB --> BRIDGES
 ```
 
 > 📖 *For exact sequence diagrams, concurrency limits, Fernet AES-128 crypto schemas, and SQL DDL specs, explore the [System Architecture Guide](docs/ARCHITECTURE.md).*

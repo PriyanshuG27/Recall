@@ -28,8 +28,6 @@ flowchart TB
 (backend/routes/auth.py)"]
         ITEMS["API Router
 (backend/routes/api.py)"]
-        BRIDGES["Bridges Router
-(backend/routes/bridges.py)"]
         HOOK["Webhook Handler
 (backend/routes/webhook.py)"]
         WS["WebSocket Router
@@ -59,7 +57,6 @@ dead_letter_queue table)]
     TG --> HOOK
     WEB --> AUTH
     WEB --> ITEMS
-    WEB --> BRIDGES
     WEB <--> WS
     EXT --> ITEMS
     SHARE --> ITEMS
@@ -140,7 +137,6 @@ erDiagram
     users ||--o{ reminders : "owns"
     users ||--o{ semantic_hubs : "owns"
     users ||--o{ dead_letter_queue : "owns"
-    users ||--o{ cognitive_bridges : "user_1 / user_2"
     items ||--o{ item_chunks : "partitioned cascade delete"
     quizzes ||--o{ quiz_answers : "tracks"
 

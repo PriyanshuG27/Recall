@@ -6,7 +6,7 @@ Ensures proper response structures and that raw_text never leaks.
 """
 
 from __future__ import annotations
-from pydantic import BaseModel, Field, AfterValidator
+from pydantic import BaseModel, Field, AfterValidator, model_validator
 from typing import List, Optional, Annotated
 from datetime import datetime, timezone, date as datetime_date
 
@@ -71,6 +71,27 @@ class SearchRequest(BaseModel):
     query: str = Field(..., description="Search query string.")
     limit: int = Field(5, ge=1, description="Maximum number of results to return (default 5).")
     rag: bool = Field(True, description="Whether to run RAG generation (default True).")
+    source_types: Optional[List[str]] = Field(None, description="Optional filter by source type.")
+    tags: Optional[List[str]] = Field(None, description="Optional filter by tags (match any).")
+    start_date: Optional[AwareDateTime] = Field(None, description="Optional filter by creation start date.")
+    end_date: Optional[AwareDateTime] = Field(None, description="Optional filter by creation end date.")
+
+    @model_validator(mode="after")
+    def validate_search_filters(self) -> "SearchRequest":
+        # Trim and normalize source_types
+        if self.source_types is not None:
+            self.source_types = [t.strip() for t in self.source_types if t and t.strip()]
+            if len(self.source_types) == 0:
+                self.source_types = None
+        # Trim and normalize tags
+        if self.tags is not None:
+            self.tags = [t.strip() for t in self.tags if t and t.strip()]
+            if len(self.tags) == 0:
+                self.tags = None
+        # Validate date ordering
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValueError("start_date must be less than or equal to end_date")
+        return self
 
 class SearchResponseItem(BaseModel):
     id: int = Field(..., description="Internal surrogate ID of the item.")

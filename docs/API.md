@@ -3,7 +3,7 @@
 
 # API
 
-Recall exposes 50 API endpoints across 6 FastAPI routers (`api.py`, `auth.py`, `bridges.py`, `webhook.py`, `websocket.py`, `main.py`).
+Recall exposes API endpoints across 5 FastAPI routers (`api.py`, `auth.py`, `webhook.py`, `websocket.py`, `main.py`).
 
 ---
 
@@ -132,27 +132,9 @@ Recall exposes 50 API endpoints across 6 FastAPI routers (`api.py`, `auth.py`, `
   "next_review": "2026-07-10"
 }
 ```
-
 ---
 
-## 4. Cognitive Bridges Router (`backend/routes/bridges.py`)
-
-### `POST /api/bridges/invite`
-* **Purpose**: Generate an 8-character invite code for mind pairing.
-* **Authentication**: JWT Cookie / Session.
-* **Related Tables**: `bridge_invites`.
-* **Related Pages**: `/bridges` (`Bridges.jsx`).
-
-**Response Example (HTTP 200 OK)**:
-```json
-{
-  "code": "A9K2M7X1"
-}
-```
-
----
-
-## 5. System & Webhook Endpoints
+## 4. System & Webhook Endpoints
 
 ### `POST /webhook`
 * **Purpose**: Telegram bot webhook listener.

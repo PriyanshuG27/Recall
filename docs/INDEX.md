@@ -44,7 +44,7 @@ This documentation system is designed according to the **Single Responsibility P
 * [📋 Architecture Decision Records (ADRs)](adr/README.md) — Formal records of key architectural decisions.
 
 ### 2. Core Technical Specifications
-* [🗄️ Database Reference](DATABASE.md) — Neon PostgreSQL schema, 15 tables, HNSW vector search, trigram text search.
+* [🗄️ Database Reference](DATABASE.md) — Neon PostgreSQL schema, 13 tables, HNSW vector search, trigram text search.
 * [🔌 API Endpoint Reference](API.md) — Complete reference for all 50 FastAPI REST & WebSocket endpoints.
 * [🌟 Feature Specifications Matrix](FEATURES.md) — Categorized matrix of 22 capabilities across production, active dev, partial, and legacy.
 

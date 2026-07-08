@@ -196,6 +196,11 @@ async def lifespan(app: FastAPI):
     app.state.client = httpx.AsyncClient(timeout=10.0)
     logger.info("Lifespan shared HTTP client initialized.")
 
+    # Preload and warm up the SOTA Rerank model if enabled
+    if settings.ENABLE_RERANKING and settings.RERANK_PRELOAD_ON_STARTUP:
+        from backend.services.reranker import reranker_service
+        await asyncio.to_thread(reranker_service.preload)
+
     # Start the background task worker loop (skipped in test mode to prevent test suites from hanging)
     import sys
     if settings.ENV != "test" and "pytest" not in sys.modules:

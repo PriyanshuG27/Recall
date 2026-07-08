@@ -63,141 +63,15 @@ async def open_pool() -> None:
     await _pool.open()
     logger.info("Database connection pool opened (min=0, max=5, max_idle=240s).")
     try:
+        import os
+        schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema_sql = f.read()
+
         async with _pool.connection() as conn:
-            await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS context_prompt TEXT;")
-            await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS passive_context JSONB;")
-            await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS category VARCHAR(100);")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_day INT DEFAULT 0;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_last_sent TIMESTAMP DEFAULT NULL;")
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS insight_candidates (
-                    id                 SERIAL PRIMARY KEY,
-                    user_id            INT REFERENCES users(id) ON DELETE CASCADE,
-                    item_id_a          INT NOT NULL,
-                    item_id_b          INT NOT NULL,
-                    similarity_score   FLOAT NOT NULL,
-                    bucket             VARCHAR(20) NOT NULL,
-                    status             VARCHAR(20) DEFAULT 'pending',
-                    insight_text       TEXT,
-                    expires_at         TIMESTAMP,
-                    cluster_pair_hash  VARCHAR(32),
-                    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_candidates_user_status ON insight_candidates(user_id, status);")
-            await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS save_time_bucket VARCHAR(20);")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS near_miss_lower_bound NUMERIC(4, 3) DEFAULT 0.710;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_recall_moment_at TIMESTAMP WITH TIME ZONE;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS self_description TEXT;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mind_type VARCHAR(50);")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mind_type_summary TEXT;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mind_type_trajectory JSONB DEFAULT '[]'::jsonb;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS node_milestones JSONB DEFAULT '{\"" + "unlocked\": []}';")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_confession_at TIMESTAMP WITH TIME ZONE;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_forward_hook_at TIMESTAMP WITH TIME ZONE;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mind_type_detailed JSONB;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_prediction_at TIMESTAMP WITH TIME ZONE;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(100);")
-            await conn.execute("ALTER TABLE semantic_hubs ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
-            await conn.execute("ALTER TABLE semantic_hubs ADD COLUMN IF NOT EXISTS streak_days INT DEFAULT 0;")
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS static_domain_centroids (
-                    id                 SERIAL PRIMARY KEY,
-                    domain_name        VARCHAR(100) UNIQUE NOT NULL,
-                    embedding          vector(384) NOT NULL
-                );
-            """)
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS cognitive_bridges (
-                    id                  SERIAL PRIMARY KEY,
-                    user_id_1           INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    user_id_2           INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    compatibility_score NUMERIC(5, 2) DEFAULT 0.0,
-                    synergy_description TEXT,
-                    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE (user_id_1, user_id_2),
-                    CHECK (user_id_1 < user_id_2)
-                );
-            """)
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_bridges_users ON cognitive_bridges(user_id_1, user_id_2);")
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS bridge_invites (
-                    id         SERIAL PRIMARY KEY,
-                    inviter_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    code       VARCHAR(50) UNIQUE NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
-            await conn.execute("ALTER TABLE cognitive_bridges ADD COLUMN IF NOT EXISTS last_ceremony_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
-            await conn.execute("ALTER TABLE cognitive_bridges ADD COLUMN IF NOT EXISTS last_ceremony_at_1 TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
-            await conn.execute("ALTER TABLE cognitive_bridges ADD COLUMN IF NOT EXISTS last_ceremony_at_2 TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS pulse_score NUMERIC DEFAULT 0;")
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS tag_portraits (
-                    id           SERIAL PRIMARY KEY,
-                    user_id      INT REFERENCES users(id) ON DELETE CASCADE,
-                    tag          VARCHAR(100) NOT NULL,
-                    description  TEXT NOT NULL,
-                    icon         VARCHAR(100) NOT NULL,
-                    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(user_id, tag)
-                );
-            """)
-            
-            # Create journey_pairs and journey_invites tables on startup (Hearth feature)
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS journey_pairs (
-                  id          SERIAL PRIMARY KEY,
-                  user_a_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                  user_b_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                  shared_days INTEGER NOT NULL DEFAULT 0,
-                  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                  status      VARCHAR(20) NOT NULL DEFAULT 'active',
-                  CHECK (user_a_id < user_b_id)
-                );
-            """)
-            await conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_journey_pairs_users ON journey_pairs(user_a_id, user_b_id);")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_journey_pairs_a ON journey_pairs(user_a_id);")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_journey_pairs_b ON journey_pairs(user_b_id);")
-
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS journey_invites (
-                  id          SERIAL PRIMARY KEY,
-                  inviter_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                  invite_code VARCHAR(16) NOT NULL UNIQUE,
-                  status      VARCHAR(20) NOT NULL DEFAULT 'pending',
-                  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                  expires_at  TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '7 days'
-                );
-            """)
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_journey_invites_code ON journey_invites(invite_code);")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_journey_invites_inviter ON journey_invites(inviter_id, status);")
-
-            # Create ai_decision_logs table for observability
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS ai_decision_logs (
-                    id SERIAL PRIMARY KEY,
-                    user_id INT REFERENCES users(id) ON DELETE SET NULL,
-                    request_id VARCHAR(100) NOT NULL,
-                    execution_id VARCHAR(100) NOT NULL,
-                    task VARCHAR(50) NOT NULL,
-                    pipeline VARCHAR(100) NOT NULL,
-                    provider_used VARCHAR(50),
-                    model_used VARCHAR(100),
-                    success BOOLEAN NOT NULL,
-                    attempts JSONB NOT NULL,
-                    final_output JSONB,
-                    error_message TEXT,
-                    cache_hit BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                );
-            """)
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_decision_logs_user_id ON ai_decision_logs(user_id);")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_decision_logs_created_at ON ai_decision_logs(created_at);")
-
+            await conn.execute(schema_sql)
             await conn.commit()
-        logger.info("Dynamic schema check completed: tables and columns verified/added successfully.")
+        logger.info("Dynamic schema check completed: tables and columns verified/added successfully from schema.sql.")
         await seed_static_centroids(_pool)
     except Exception as ddl_err:
         logger.error("Failed to run dynamic schema update: %s", ddl_err)

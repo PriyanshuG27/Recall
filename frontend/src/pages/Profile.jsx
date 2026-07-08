@@ -340,7 +340,7 @@ const MILESTONE_ICONS = {
       <path d="M2 12h20" />
     </svg>
   ),
-  compatibility: (
+  hearth: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
@@ -455,7 +455,7 @@ export default function Profile() {
     { key: 'pattern_report', threshold: 5, label: 'Pattern Report', desc: 'Identifies early cognitive clusters' },
     { key: 'mind_type', threshold: 15, label: 'Mind Type Trajectory', desc: 'MBTI-style graph classification' },
     { key: 'predictions', threshold: 30, label: 'Monthly Predictions', desc: 'Topic extrapolation engine' },
-    { key: 'compatibility', threshold: 50, label: 'Thought Compatibility', desc: 'Cross-user mental overlaps' },
+    { key: 'hearth', threshold: 50, label: 'Hearth Space', desc: 'Enables pairing with a friend and growing a shared Hearth space' },
     { key: 'ranked_pulse', threshold: 100, label: 'Ranked Pulse', desc: 'High-frequency hub analysis' },
     { key: 'public_graph', threshold: 200, label: 'Public Graph Observatory', desc: 'Declassified shared map' }
   ];

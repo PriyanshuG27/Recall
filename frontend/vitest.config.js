@@ -20,7 +20,6 @@ export default defineConfig({
         'src/main.jsx',
         'src/pages/Nebula.jsx',
         'src/pages/BranchingPOC.jsx',
-        'src/pages/Bridges.jsx',
         'src/canvas/NebulaCanvas.jsx',
         'src/canvas/GraphCanvas.jsx',
         'src/canvas/Graph3DScene.jsx',

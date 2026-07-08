@@ -22,30 +22,21 @@ CREATE TABLE IF NOT EXISTS users (
     drive_nudge_sent     BOOLEAN DEFAULT FALSE,
     onboarding_day       INT DEFAULT 0,     -- Day 1-5 onboarding sequence tracking
     onboarding_last_sent TIMESTAMP DEFAULT NULL,
+    near_miss_lower_bound NUMERIC(4, 3) DEFAULT 0.710,
+    last_recall_moment_at TIMESTAMP WITH TIME ZONE,
+    self_description     TEXT,
+    mind_type            VARCHAR(50),
+    mind_type_summary    TEXT,
+    mind_type_trajectory JSONB DEFAULT '[]'::jsonb,
+    node_milestones      JSONB DEFAULT '{"unlocked": []}'::jsonb,
+    last_confession_at   TIMESTAMP WITH TIME ZONE,
+    last_forward_hook_at TIMESTAMP WITH TIME ZONE,
+    last_prediction_at   TIMESTAMP WITH TIME ZONE,
+    first_name           VARCHAR(100),
+    username             VARCHAR(100),
+    pulse_score          NUMERIC DEFAULT 0,
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- Ensure the columns exist if the users/items tables already exist
-ALTER TABLE users ADD COLUMN IF NOT EXISTS google_last_sync TIMESTAMP;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS digest_enabled BOOLEAN DEFAULT TRUE;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_day INT DEFAULT 0;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_last_sent TIMESTAMP DEFAULT NULL;
-ALTER TABLE items ADD COLUMN IF NOT EXISTS context_note TEXT;
-ALTER TABLE items ADD COLUMN IF NOT EXISTS passive_context JSONB;
-ALTER TABLE items ADD COLUMN IF NOT EXISTS save_time_bucket VARCHAR(20);
-ALTER TABLE items ADD COLUMN IF NOT EXISTS category VARCHAR(100);
-ALTER TABLE users ADD COLUMN IF NOT EXISTS near_miss_lower_bound NUMERIC(4, 3) DEFAULT 0.710;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_recall_moment_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS self_description TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS mind_type VARCHAR(50);
-ALTER TABLE users ADD COLUMN IF NOT EXISTS mind_type_summary TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS mind_type_trajectory JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS node_milestones JSONB DEFAULT '{"unlocked": []}'::jsonb;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_confession_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_forward_hook_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_prediction_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
-ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(100);
 
 
 
@@ -149,6 +140,18 @@ CREATE INDEX IF NOT EXISTS idx_items_embedding
 CREATE INDEX IF NOT EXISTS idx_items_text_gin
     ON items USING gin (summary gin_trgm_ops);
 
+-- GIN index for fast PostgreSQL native array overlap tags filtering
+CREATE INDEX IF NOT EXISTS idx_items_tags_gin
+    ON items USING gin (tags);
+
+-- B-Tree index for filtering by source type per user
+CREATE INDEX IF NOT EXISTS idx_items_source_type
+    ON items (user_id, source_type);
+
+-- B-Tree index for filtering by creation date per user
+CREATE INDEX IF NOT EXISTS idx_items_created_at
+    ON items (user_id, created_at);
+
 -- B-Tree index for reminders dispatcher polling
 CREATE INDEX IF NOT EXISTS idx_reminders_time_status
     ON reminders(remind_at, status);
@@ -201,31 +204,6 @@ CREATE TABLE IF NOT EXISTS static_domain_centroids (
     id SERIAL PRIMARY KEY,
     domain_name VARCHAR(100) UNIQUE NOT NULL,
     embedding vector(384) NOT NULL
-);
-
-
--- 14. COGNITIVE BRIDGES TABLE
-CREATE TABLE IF NOT EXISTS cognitive_bridges (
-    id                  SERIAL PRIMARY KEY,
-    user_id_1           INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    user_id_2           INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    compatibility_score NUMERIC(5, 2) DEFAULT 0.0,
-    synergy_description TEXT,
-    last_ceremony_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (user_id_1, user_id_2),
-    CHECK (user_id_1 < user_id_2)
-);
-
-CREATE INDEX IF NOT EXISTS idx_bridges_users ON cognitive_bridges(user_id_1, user_id_2);
-
-
--- 15. BRIDGE INVITES TABLE
-CREATE TABLE IF NOT EXISTS bridge_invites (
-    id         SERIAL PRIMARY KEY,
-    inviter_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    code       VARCHAR(50) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 16. TAG PORTRAITS TABLE
@@ -325,4 +303,22 @@ CREATE TABLE IF NOT EXISTS active_hubs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_active_hubs_user ON active_hubs(user_id);
+
+
+-- 22. INSIGHT CANDIDATES TABLE
+CREATE TABLE IF NOT EXISTS insight_candidates (
+    id                 SERIAL PRIMARY KEY,
+    user_id            INT REFERENCES users(id) ON DELETE CASCADE,
+    item_id_a          INT NOT NULL,
+    item_id_b          INT NOT NULL,
+    similarity_score   FLOAT NOT NULL,
+    bucket             VARCHAR(20) NOT NULL,
+    status             VARCHAR(20) DEFAULT 'pending',
+    insight_text       TEXT,
+    expires_at         TIMESTAMP,
+    cluster_pair_hash  VARCHAR(32),
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_candidates_user_status ON insight_candidates(user_id, status);
 

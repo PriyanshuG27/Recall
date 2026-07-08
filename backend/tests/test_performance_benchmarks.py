@@ -298,23 +298,6 @@ def test_chunking_tokenization_performance():
     assert duration < 10.0
     assert len(chunks) > 100
 
-# --- 14. Cognitive Bridge Lookup ---
-@pytest.mark.asyncio
-async def test_cognitive_bridge_lookup_speed():
-    """Verify checking user bridge status completes in < 3 ms using unique indexes."""
-    mock_conn = MockBenchmarkConnection()
-    cursor = mock_conn.cursor()
-    
-    start_query = time.perf_counter()
-    await cursor.execute(
-        "SELECT compatibility_score FROM cognitive_bridges WHERE user_id_1 = %s AND user_id_2 = %s;",
-        (100, 200)
-    )
-    await cursor.fetchone()
-    duration = (time.perf_counter() - start_query) * 1000.0
-    
-    assert duration < 3.0
-
 # --- 15. Graph Node Cooling ---
 def test_graph_active_cooling_performance():
     """Verify eviction of inactive canvas elements from active set completes in < 5 ms."""
