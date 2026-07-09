@@ -2983,3 +2983,20 @@ async def handle_pwa_share_target(
         
     return RedirectResponse(url="/archive?status=shared_success", status_code=303)
 
+
+@router.post("/mock-ocr")
+async def mock_ocr(payload: dict):
+    """Simulates a remote OCR microservice request to benchmark HTTP/network overhead without loading models."""
+    import asyncio
+    # Simulate a lightweight network/inference round-trip delay (e.g. 50ms)
+    await asyncio.sleep(0.05)
+    return {"ocr_text": "Extracted text from mock OCR API endpoint."}
+
+
+@router.get("/remote-ai-timings")
+async def get_remote_ai_timings():
+    """Returns remote AI telemetry collected by the API process."""
+    from backend.services.remote_ai_client import get_timings
+    return get_timings()
+
+

@@ -237,3 +237,7 @@ docs/internal/
 Next version/
 .next/
 
+# Local performance baseline profiling data
+deployment_profile.json
+deployment_profile.csv
+remote_ai_deployment_profile.json

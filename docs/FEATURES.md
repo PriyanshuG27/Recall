@@ -20,8 +20,8 @@ Capabilities in **Recall** are classified across 5 status levels:
 | **Telegram Ingestion** | ✅ Production | `routes/webhook.py`<br>`worker.py` | Ingest voice notes, screenshots, PDFs, URLs, text via Telegram (`@<YourBotUsername>`). |
 | **Multi-Format Parsing** | ✅ Production | `services/*_ingester.py` | Media scrapers for URLs, YouTube/Instagram reels via Cobalt API, PyMuPDF PDF chunking, OpenCV OCR. |
 | **Hybrid Search & RAG** | ✅ Production | `services/search_service.py` | Combined 384-dim `pgvector` HNSW cosine search (< 10ms) and `pg_trgm` GIN trigram search (< 5ms) via RRF. |
-| **AI Cascade** | ✅ Production | `services/ai_cascade.py` | Multi-provider LLM failover. Summarization: Modal -> Groq (3-tier: Qwen 27B / GPT-OSS 120B / 20B) -> Gemini -> Bookmark Fallback. RAG: OpenRouter -> NVIDIA -> Gemini.
-| **OCR Preprocessing** | ✅ Production | `services/ocr_service.py` | Pillow image enhancement (2.0x contrast) + PaddleOCR. Gemini vision fallback if words < 10. |
+| **AI Cascade** | ✅ Production | `services/ai_cascade.py` | Multi-provider LLM failover. Summarization/RAG: Groq -> Gemini -> OpenRouter -> Bookmark Fallback. |
+| **OCR Preprocessing** | ✅ Production | `services/ocr_service.py` | Image/PDF OCR utilizing NVIDIA NIM OCR as the primary engine, with Gemini 2.5 Flash as the fallback. |
 | **3D Observatory** | ✅ Production | `pages/Map.jsx`<br>`canvas/MapCanvas.jsx` | Force-directed 2D/3D constellation mind map (`/map`) and glass archive cylinder (`/archive`). |
 | **Interactive Citations** | ✅ Production | `components/ChatDrawer.jsx` | Clicking RAG citation badges (`[1]`, `[2]`) animates camera focus to center on cited item with aura flare. |
 | **Spaced Repetition SM-2** | ✅ Production | `pages/Drill.jsx`<br>`services/sm2.py` | Active recall review room (`/drill`) updating SuperMemo-2 ease factors and review intervals. |

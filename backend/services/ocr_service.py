@@ -180,6 +180,25 @@ async def perform_ocr(img_or_path_or_bytes: Union[Image.Image, str, bytes]) -> s
     Unified entry point for performing OCR. Supports PIL Image, filepath string, or bytes.
     Enforces a strict 30-second processing timeout per image.
     """
+    if getattr(settings, "OCR_PROVIDER", "local") == "remote":
+        # Convert input to raw bytes in memory (no disk writes)
+        if isinstance(img_or_path_or_bytes, bytes):
+            image_bytes = img_or_path_or_bytes
+        elif isinstance(img_or_path_or_bytes, str):
+            with open(img_or_path_or_bytes, "rb") as f:
+                image_bytes = f.read()
+        else:
+            buf = io.BytesIO()
+            img_or_path_or_bytes.save(buf, format="PNG")
+            image_bytes = buf.getvalue()
+        
+        from backend.services.remote_ai_client import generate_remote_ocr
+        try:
+            return await generate_remote_ocr(image_bytes)
+        except Exception as e:
+            logger.error("Remote OCR failed: %s. Returning empty.", e)
+            return ""
+
     if not check_paddleocr_available():
         logger.warning("PaddleOCR not installed. OCR skipped.")
         return ""

@@ -161,11 +161,11 @@ flowchart TB
         SCHED["APScheduler Engine\n(22 Background Cron Jobs)"]
     end
 
-    subgraph AI_PIPELINE["4. MULTI-PROVIDER AI CASCADE & EXTRACTORS"]
-        STT["Voice Transcription\nModal GPU (Whisper)"]
-        OCR["Image OCR Engine\nHF PaddleOCR"]
-        EMBED["Vector Embeddings\nFastEmbed ONNX (bge-small)"]
-        CASCADE["LLM Failover Cascade\nModal (Qwen) ➔ Groq ➔ Gemini ➔ Bookmark Fallback"]
+    subgraph AI_PIPELINE["4. MULTI-PROVIDER AI WORKLOADS"]
+        STT["Voice/Audio Transcription\nGroq Whisper Turbo (Serverless)"]
+        OCR["Image/PDF OCR\nGemini 2.5 Flash (Serverless)"]
+        EMBED["Vector Embeddings & Reranker\nFastEmbed / Reranker (Azure VM)"]
+        CASCADE["LLM Failover Cascade\nGroq ➔ Gemini ➔ Bookmark Fallback"]
     end
 
     subgraph STORAGE["5. DATABASE & HYBRID RETRIEVAL ENGINE (Neon PostgreSQL)"]
@@ -289,7 +289,7 @@ Recall is backed by a complete engineering manual inside `docs/`:
 * 🔌 [API Reference](docs/API.md) — Complete specification for all 50 FastAPI REST & WebSocket endpoints.
 * 🌟 [Feature Status Matrix](docs/FEATURES.md) — Feature status breakdown across production, dev, and legacy code.
 * 🛠️ [Development Guide](docs/DEVELOPMENT.md) — Environment setup, `Makefile` targets, and contributor workflows.
-* ☁️ [Deployment Guide](docs/DEPLOYMENT.md) — Hosting setup (Koyeb, Vercel, Modal) and 27 environment variables.
+* ☁️ [Deployment Guide](docs/DEPLOYMENT.md) — Hosting setup (Koyeb, Vercel, Azure Student VM) and 28 environment variables.
 * 🛡️ [Security Architecture](docs/SECURITY.md) — Cryptography, Fernet AES-128, HMAC verification, and PII masking.
 * 🧪 [Testing Strategy](docs/TESTING.md) — Test pyramid breakdown across 151 test files.
 * 🤝 [Contributing Guidelines](docs/CONTRIBUTING.md) — Coding standards, workspace rules, and PR checklist.

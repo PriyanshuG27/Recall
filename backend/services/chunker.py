@@ -24,6 +24,13 @@ async def embed_text_batch(texts: List[str]) -> List[List[float]]:
         val = 1.0 / (384 ** 0.5)
         return [[val] * 384 for _ in texts]
 
+    if getattr(settings, "EMBEDDING_PROVIDER", "local") == "remote":
+        from backend.services.remote_ai_client import generate_remote_embedding_batch
+        try:
+            return await generate_remote_embedding_batch(texts)
+        except Exception as e:
+            logger.error("Remote batch embedding failed: %s. Falling back.", e)
+
     global _local_chunk_model
     try:
         from fastembed import TextEmbedding

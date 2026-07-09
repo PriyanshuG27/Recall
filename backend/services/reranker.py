@@ -101,16 +101,20 @@ class FastEmbedReranker(BaseReranker):
 
         start_time = time.perf_counter()
         try:
-            model = await asyncio.to_thread(self._get_model)
             passages = [self._select_passage(doc) for doc in documents]
-
-            # Run local ONNX cross-encoder model inside a thread executor to keep event loop unblocked
-            # Wrapped in a strict timeout boundary
-            scores_iterable = await asyncio.wait_for(
-                asyncio.to_thread(lambda: list(model.rerank(query, passages))),
-                timeout=settings.RERANK_TIMEOUT_SECONDS
-            )
-            scores = list(scores_iterable)
+            provider = getattr(settings, "RERANKER_PROVIDER", "local")
+            if provider == "remote":
+                from backend.services.remote_ai_client import generate_remote_rerank
+                scores = await generate_remote_rerank(query, passages)
+            else:
+                model = await asyncio.to_thread(self._get_model)
+                # Run local ONNX cross-encoder model inside a thread executor to keep event loop unblocked
+                # Wrapped in a strict timeout boundary
+                scores_iterable = await asyncio.wait_for(
+                    asyncio.to_thread(lambda: list(model.rerank(query, passages))),
+                    timeout=settings.RERANK_TIMEOUT_SECONDS
+                )
+                scores = list(scores_iterable)
 
             # Zip and associate scores with documents
             scored_docs = []

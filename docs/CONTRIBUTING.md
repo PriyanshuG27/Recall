@@ -8,7 +8,7 @@ Thank you for contributing to **Recall**! This document outlines the development
 
 As defined in `AGENTS.md`, all contributions MUST strictly adhere to the following rules:
 
-1. **Fixed Tech Stack**: FastAPI (backend) · React+Vite (frontend) · Neon PostgreSQL+pgvector+pg_trgm · Upstash Redis · Modal GPU · Render · Vercel. Do not introduce new dependencies without explicit justification.
+1. **Fixed Tech Stack**: FastAPI (backend) · React+Vite (frontend) · Neon PostgreSQL+pgvector+pg_trgm · Upstash Redis · Azure Student VM (AI) · Koyeb · Vercel. Do not introduce new dependencies without explicit justification.
 2. **Zero Unparameterized SQL**: All database queries MUST use parameterized `$1, $2` placeholders. Direct string interpolation into SQL queries is prohibited.
 3. **Webhook ACK Speed**: Telegram webhook handlers MUST return HTTP 200 ACK in **< 50 ms**. Heavy tasks must be pushed to the background queue (`recall:tasks`).
 4. **AI Concurrency Cap**: `asyncio.Semaphore(3)` caps concurrent AI processing tasks across the worker and scheduler. Do not raise this limit without explicit justification.

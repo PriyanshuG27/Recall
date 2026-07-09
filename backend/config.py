@@ -64,11 +64,21 @@ class Settings(BaseSettings):
     # Reranker settings
     ENABLE_RERANKING: bool = True
     RERANK_PRELOAD_ON_STARTUP: bool = True
-    RERANKER_PROVIDER: str = "fastembed"
+    RERANKER_PROVIDER: str = "local"  # "local" or "remote"
     RERANKER_MODEL: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     RERANK_CANDIDATES: int = 20
     RERANK_TOP_N: int = 5
     RERANK_TIMEOUT_SECONDS: float = 2.0
+
+    # Provider settings
+    EMBEDDING_PROVIDER: str = "local"  # "local" or "remote"
+    OCR_PROVIDER: str = "local"  # "local" or "remote"
+    SENTENCE_SPLITTER: str = "spacy"  # "spacy", "regex", or "remote"
+    REMOTE_AI_URL: str = "http://127.0.0.1:8001"
+    REMOTE_EMBED_URL: str | None = None
+    REMOTE_RERANK_URL: str | None = None
+    REMOTE_OCR_URL: str | None = None
+    REMOTE_SPLIT_URL: str | None = None
 
     # Contextual Retrieval settings
     CHUNK_TARGET_WORDS: int = 120

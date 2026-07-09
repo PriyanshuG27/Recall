@@ -47,11 +47,13 @@ Semaphore: 3)"]
 
     subgraph Storage["Data & Pipeline Layer"]
         DB[(Neon PostgreSQL 16
-pgvector + pg_trgm)]
+        pgvector + pg_trgm)]
         DLQ[(Dead Letter Queue
-dead_letter_queue table)]
-        AI["AI Cascade Engine
-(Groq / Gemini / Modal)"]
+        dead_letter_queue table)]
+        AI_CASCADE["AI Cascade Engine
+        (Groq / Gemini / OpenRouter)"]
+        AI_SVC["Azure AI Service VM
+        (FastEmbed / Reranker / spaCy)"]
     end
 
     TG --> HOOK
@@ -63,7 +65,8 @@ dead_letter_queue table)]
 
     HOOK -- "< 50ms ACK" --> REDIS
     REDIS --> WORKER
-    WORKER --> AI
+    WORKER --> AI_CASCADE
+    WORKER --> AI_SVC
     WORKER --> DB
     WORKER -- "On Failure" --> DLQ
     SCHED --> DB
@@ -81,15 +84,14 @@ flowchart TD
     B -- "Voice / Audio" --> C1["Voice Ingester
 (voice_ingester.py)"]
     C1 --> C2["Groq Whisper Turbo
-(Fallback: Modal / Gemini)"]
+(Serverless / Low Latency)"]
     C2 --> C3["Phonetic Sanitizer
 (sanitize_transcript)"]
     
-    B -- "Image / Document" --> D1["OCR Worker
-(ocr_worker.py)"]
-    D1 --> D2["OpenCV + PaddleOCR
-(Threshold >= 60%)"]
-    D2 -- "< 10 words" --> D3["Gemini Vision Fallback"]
+    B -- "Image / Document" --> D1["NVIDIA NIM OCR
+(Primary Extractor)"]
+    D1 -- "Failover / Low Confidence" --> D2["Gemini 2.5 Flash OCR
+(LLM Fallback)"]
     
     B -- "PDF Document" --> E1["PDF Ingester
 (pdf_ingester.py)"]
@@ -105,15 +107,15 @@ Extract OpenGraph & Text"]
 
     C3 --> G["AI Cascade Engine
 (ai_cascade.py)"]
+    D1 --> G
     D2 --> G
-    D3 --> G
     E3 --> G
     F2 --> G
 
-    G --> H1["Modal GPU Endpoint"]
-    H1 -- "Failover" --> H2["Groq 3-Tier Rotation
-(Qwen 27B / GPT-OSS 120B / 20B)"]
-    H2 -- "Failover" --> H3["Gemini 3.1 Flash-Lite"]
+    G --> H1["Groq LLM Engine
+(Llama 3 70B)"]
+    H1 -- "Failover" --> H2["Gemini 2.5 Flash / Lite"]
+    H2 -- "Failover" --> H3["OpenRouter Fallbacks"]
     H3 -- "On Failure" --> H4["Bookmark Fallback / DLQ"]
 
     H1 --> I["Generate Summary & Tags"]
@@ -121,7 +123,7 @@ Extract OpenGraph & Text"]
     H3 --> I
 
     I --> J["Generate 384-dim Vector
-(BAAI/bge-small-en-v1.5)"]
+(Azure AI VM FastEmbed)"]
     J --> K["Fernet Encrypt raw_text"]
     K --> L["Save to items table
 (Partitioned by Range)"]

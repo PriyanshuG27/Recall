@@ -50,7 +50,7 @@ This documentation system is designed according to the **Single Responsibility P
 
 ### 3. Developer Workflows & Operations
 * [🛠️ Development Guide](DEVELOPMENT.md) — Local environment setup, `Makefile` targets, debugging, and new feature workflow.
-* [☁️ Deployment Guide](DEPLOYMENT.md) — Hosting setup (Render, Vercel, Modal) and 27 environment variables.
+* [☁️ Deployment Guide](DEPLOYMENT.md) — Hosting setup (Koyeb, Vercel, Azure Student VM) and 28 environment variables.
 * [🧪 Testing Framework Guide](TESTING.md) — Test strategy across 151 test files (Pytest, Vitest, Playwright, k6 load scripts).
 * [🛡️ Security Architecture](SECURITY.md) — Fernet AES-128 encryption, HMAC verification, httpOnly cookies, PII masking.
 
