@@ -119,9 +119,13 @@ async def ensure_partitions(conn) -> None:
                     
                 query = psycopg.sql.SQL("""
                 CREATE TABLE IF NOT EXISTS {} PARTITION OF items
-                FOR VALUES FROM (%s) TO (%s);
-                """).format(psycopg.sql.Identifier(partition_name))
-                await cur.execute(query, (f"{start_date} 00:00:00", f"{end_date} 00:00:00"))
+                FOR VALUES FROM ({}) TO ({});
+                """).format(
+                    psycopg.sql.Identifier(partition_name),
+                    psycopg.sql.Literal(f"{start_date} 00:00:00"),
+                    psycopg.sql.Literal(f"{end_date} 00:00:00")
+                )
+                await cur.execute(query)
         logger.info("Partition pre-creation completed successfully.")
     except Exception as e:
         logger.error("Failed to pre-create partitions on startup: %s", e, exc_info=True)

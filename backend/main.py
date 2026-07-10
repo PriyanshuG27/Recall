@@ -171,8 +171,8 @@ async def lifespan(app: FastAPI):
     app.state.client = httpx.AsyncClient(timeout=10.0)
     logger.info("Lifespan shared HTTP client initialized.")
 
-    # Preload and warm up the SOTA Rerank model if enabled
-    if settings.ENABLE_RERANKING and settings.RERANK_PRELOAD_ON_STARTUP:
+    # Preload and warm up the SOTA Rerank model if enabled locally
+    if settings.ENABLE_RERANKING and settings.RERANK_PRELOAD_ON_STARTUP and getattr(settings, "RERANKER_PROVIDER", "local") != "remote":
         from backend.services.reranker import reranker_service
         await asyncio.to_thread(reranker_service.preload)
 
