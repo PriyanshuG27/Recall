@@ -194,14 +194,14 @@ async def test_partition_creator_success():
         query_curr, params_curr = cursor.executed[1]
         assert "create table if not exists" in query_curr.lower()
         assert "items_y2026m06" in query_curr.lower()
-        assert "2026-06-01 00:00:00" in params_curr
-        assert "2026-07-01 00:00:00" in params_curr
+        assert "2026-06-01 00:00:00" in query_curr
+        assert "2026-07-01 00:00:00" in query_curr
         
         query_next, params_next = cursor.executed[2]
         assert "create table if not exists" in query_next.lower()
         assert "items_y2026m07" in query_next.lower()
-        assert "2026-07-01 00:00:00" in params_next
-        assert "2026-08-01 00:00:00" in params_next
+        assert "2026-07-01 00:00:00" in query_next
+        assert "2026-08-01 00:00:00" in query_next
 
 
 @pytest.mark.asyncio

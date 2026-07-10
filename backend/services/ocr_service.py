@@ -253,10 +253,16 @@ async def perform_ocr(img_or_path_or_bytes: Union[Image.Image, str, bytes]) -> s
 
     # Step A: Try PaddleOCR (Remote or Local)
     try:
-        if getattr(settings, "OCR_PROVIDER", "local") == "remote":
-            from backend.services.remote_ai_client import generate_remote_ocr
-            ocr_text = await generate_remote_ocr(image_bytes)
-        else:
+        provider = getattr(settings, "OCR_PROVIDER", "local")
+        if provider == "remote":
+            try:
+                from backend.services.remote_ai_client import generate_remote_ocr
+                ocr_text = await generate_remote_ocr(image_bytes)
+            except Exception as e:
+                logger.warning("Remote PaddleOCR failed: %s. Falling back to local PaddleOCR.", e)
+                provider = "local"
+                
+        if provider == "local":
             if check_paddleocr_available():
                 loop = asyncio.get_running_loop()
                 executor = _get_ocr_executor()

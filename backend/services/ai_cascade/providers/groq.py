@@ -70,6 +70,30 @@ class GroqProvider(BaseProvider):
                         "role": "system",
                         "content": "CRITICAL: Do NOT write any thinking process, reasoning, explanation, or <think> tags. Start immediately with the JSON block and output ONLY the raw JSON."
                     })
+            elif json_mode:
+                # Ensure the word 'json' is in messages for non-Qwen models when json_mode is True to prevent Groq API 400 errors
+                has_json_word = False
+                for m in messages:
+                    if "json" in m.get("content", "").lower():
+                        has_json_word = True
+                        break
+                if not has_json_word:
+                    payload_messages = []
+                    has_system = False
+                    for m in messages:
+                        if m.get("role") == "system":
+                            has_system = True
+                            payload_messages.append({
+                                "role": "system",
+                                "content": m.get("content", "") + "\n\nNote: Please respond in JSON format."
+                            })
+                        else:
+                            payload_messages.append(m)
+                    if not has_system:
+                        payload_messages.insert(0, {
+                            "role": "system",
+                            "content": "Please respond in JSON format."
+                        })
 
             payload = {
                 "model": current_model,

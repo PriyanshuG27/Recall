@@ -104,9 +104,14 @@ class FastEmbedReranker(BaseReranker):
             passages = [self._select_passage(doc) for doc in documents]
             provider = getattr(settings, "RERANKER_PROVIDER", "local")
             if provider == "remote":
-                from backend.services.remote_ai_client import generate_remote_rerank
-                scores = await generate_remote_rerank(query, passages)
-            else:
+                try:
+                    from backend.services.remote_ai_client import generate_remote_rerank
+                    scores = await generate_remote_rerank(query, passages)
+                except Exception as e:
+                    logger.error("Remote reranking failed: %s. Falling back to local reranker.", e)
+                    provider = "local"
+            
+            if provider == "local":
                 model = await asyncio.to_thread(self._get_model)
                 # Run local ONNX cross-encoder model inside a thread executor to keep event loop unblocked
                 # Wrapped in a strict timeout boundary

@@ -30,19 +30,23 @@ class RemoteSentencizer:
     def __call__(self, text: str) -> MockDoc:
         from backend.services.remote_ai_client import generate_remote_sentence_split
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(lambda: asyncio.run(generate_remote_sentence_split(text)))
-                sentences = future.result()
-        else:
-            sentences = loop.run_until_complete(generate_remote_sentence_split(text))
-        return MockDoc(text, sentences)
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(lambda: asyncio.run(generate_remote_sentence_split(text)))
+                    sentences = future.result()
+            else:
+                sentences = loop.run_until_complete(generate_remote_sentence_split(text))
+            return MockDoc(text, sentences)
+        except Exception as e:
+            logger.error("Remote sentence splitting failed: %s. Falling back to local regex sentencizer.", e)
+            return MockDoc(text)
 
 _nlp_instance = None
 
