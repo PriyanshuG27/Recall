@@ -193,10 +193,37 @@ export default function Login() {
   const [error, setError]             = useState('');
   const [customChatId, setCustomChatId] = useState('');
   const [displayText, setDisplayText] = useState('');
+  const [twaDebug, setTwaDebug]       = useState(null); // debug info inside Telegram
   const canvasRef = useRef(null);
 
   // Animate demo graph
   useDemoGraph(canvasRef);
+
+  // TWA auto-login: runs when Login page mounts inside Telegram
+  useEffect(() => {
+    const initData = window.Telegram?.WebApp?.initData;
+    if (!initData) {
+      // Not in Telegram or initData empty
+      if (window.Telegram?.WebApp) {
+        setTwaDebug({ step: 'initData empty', detail: 'Telegram detected but initData is empty string' });
+      }
+      return;
+    }
+    setTwaDebug({ step: 'attempting login', detail: `initData length: ${initData.length}` });
+    fetch('/auth/me')
+      .then(async res => {
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          login({ id: body.id, chat_id: body.chat_id, drive_connected: body.drive_connected, google_last_sync: body.google_last_sync });
+          setTwaDebug({ step: 'success', detail: `Logged in as user ${body.id}` });
+        } else {
+          setTwaDebug({ step: 'backend rejected', detail: `${res.status}: ${body.detail || JSON.stringify(body)}` });
+        }
+      })
+      .catch(err => {
+        setTwaDebug({ step: 'network error', detail: err.message });
+      });
+  }, [login]);
 
   // Typewriter tagline
   const fullText = 'Your second brain, finally visible.';
@@ -344,6 +371,14 @@ export default function Login() {
             ← Back to Atrium
           </button>
         </div>
+
+        {/* TWA Debug overlay — only visible inside Telegram */}
+        {twaDebug && (
+          <div style={{ marginBottom: '1rem', padding: '0.6rem 0.75rem', borderRadius: 4, background: 'rgba(41,171,226,0.08)', border: '1px solid rgba(41,171,226,0.2)', fontFamily: '"JetBrains Mono", monospace', fontSize: 10 }}>
+            <div style={{ color: '#29ABE2', marginBottom: 2, letterSpacing: '0.08em' }}>TWA · {twaDebug.step}</div>
+            <div style={{ color: 'rgba(244,239,235,0.5)' }}>{twaDebug.detail}</div>
+          </div>
+        )}
 
         {/* Wordmark */}
         <div className="login-step" style={{ animationDelay: '0.05s', marginBottom: '2.5rem' }}>
