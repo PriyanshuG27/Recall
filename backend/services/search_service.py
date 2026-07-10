@@ -101,7 +101,7 @@ async def _generate_embedding_uncached(text: str) -> List[float]:
             from backend.services.remote_ai_client import generate_remote_embedding
             return await generate_remote_embedding(text)
         except Exception as e:
-            logger.error("Failed to generate embedding via remote provider: %s. Falling back to local/other providers.", e)
+            logger.error("Failed to generate embedding via remote provider. Falling back to local/other providers.", exc_info=True)
 
     # 1. Try Modal if a real API token is configured
     if settings.MODAL_API_TOKEN and not settings.MODAL_API_TOKEN.startswith("ak-mock"):

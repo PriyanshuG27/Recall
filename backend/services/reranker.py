@@ -108,7 +108,7 @@ class FastEmbedReranker(BaseReranker):
                     from backend.services.remote_ai_client import generate_remote_rerank
                     scores = await generate_remote_rerank(query, passages)
                 except Exception as e:
-                    logger.error("Remote reranking failed: %s. Falling back to local reranker.", e)
+                    logger.error("Remote reranking failed. Falling back to local reranker.", exc_info=True)
                     provider = "local"
             
             if provider == "local":
