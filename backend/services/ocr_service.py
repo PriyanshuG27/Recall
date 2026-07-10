@@ -177,7 +177,7 @@ def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
     return {"ocr_text": ocr_result_text, "trigger_gemini_fallback": False}
 
 async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
-    """Calls NVIDIA NIM OCR model (Llama 3.2 11B Vision Instruct) via OpenAI-compatible API."""
+    """Calls NVIDIA NIM vision models in cascade order (11b-vision -> 90b-vision -> nemotron-nano-vl)."""
     import base64
     import httpx
     
@@ -188,39 +188,50 @@ async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
     }
     
     b64_image = base64.b64encode(image_bytes).decode("utf-8")
-    payload = {
-        "model": "meta/llama-3.2-11b-vision-instruct",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Extract all legible text from this image as raw text. Do not summarize, describe, or add explanations."},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{b64_image}"
-                        }
-                    }
-                ]
-            }
-        ],
-        "max_tokens": 1024,
-        "temperature": 0.0
-    }
     
-    try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                extracted = data["choices"][0]["message"]["content"].strip()
-                return extracted
-            else:
-                logger.warning("NVIDIA NIM OCR failed with status %d: %s", resp.status_code, resp.text)
-                return None
-    except Exception as e:
-        logger.error("Error calling NVIDIA NIM OCR: %s", e)
-        return None
+    models = [
+        "meta/llama-3.2-11b-vision-instruct",
+        "meta/llama-4-maverick-17b-128e-instruct",
+        "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+        "nvidia/nemotron-nano-12b-v2-vl"
+    ]
+    
+    for model_name in models:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract all legible text from this image as raw text. Do not summarize, describe, or add explanations."},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{b64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 1024,
+            "temperature": 0.0
+        }
+        
+        try:
+            # Lower timeout per model so fallback transitions quickly
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    extracted = data["choices"][0]["message"]["content"].strip()
+                    logger.info("NVIDIA NIM OCR succeeded using model: %s", model_name)
+                    return extracted
+                else:
+                    logger.warning("NVIDIA NIM OCR model %s failed with status %d: %s", model_name, resp.status_code, resp.text)
+        except Exception as e:
+            logger.error("Error calling NVIDIA NIM OCR model %s: %s", model_name, e)
+            
+    return None
 
 
 async def perform_ocr(img_or_path_or_bytes: Union[Image.Image, str, bytes]) -> str:
