@@ -733,6 +733,10 @@
   }
 }
 
+.lp-mobile-steps {
+  display: none;
+}
+
 /* ── RESPONSIVE ─────────────────────────────────────────── */
 @media (max-width: 900px) {
   .lp-pin-section { grid-template-columns: 1fr; gap: 40px; }
