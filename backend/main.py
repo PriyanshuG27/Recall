@@ -168,9 +168,9 @@ async def lifespan(app: FastAPI):
 
     # Dynamic startup migrations — all use IF NOT EXISTS so safe on every boot
     try:
-        from backend.db.connection import _pool
-        if _pool is not None:
-            async with _pool.connection() as conn:
+        import backend.db.connection as db_conn
+        if db_conn._pool is not None:
+            async with db_conn._pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         "ALTER TABLE users ADD COLUMN IF NOT EXISTS initial_onboarding_completed BOOLEAN DEFAULT FALSE;"
@@ -201,14 +201,13 @@ async def lifespan(app: FastAPI):
         app.state.worker_task = asyncio.create_task(start_worker_task())
         logger.info("Atrium task worker loop started in background (inline).")
 
-    # Auto-retry recent DLQ tasks on startup (limit 5, failed < 24h ago)
     try:
-        from backend.db.connection import _pool
+        import backend.db.connection as db_conn
         from backend.services.redis_client import redis
         import json
         
-        if _pool is not None:
-            async with _pool.connection() as conn:
+        if db_conn._pool is not None:
+            async with db_conn._pool.connection() as conn:
                 async with conn.cursor() as cur:
                     # 1. Clean up already-retried DLQ entries older than 2h to stop the spam loop
                     await cur.execute(
