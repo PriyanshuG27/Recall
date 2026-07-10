@@ -195,6 +195,7 @@ export default function Login() {
   const [displayText, setDisplayText] = useState('');
   const [twaDebug, setTwaDebug]       = useState(null);
   const [botSession, setBotSession]   = useState(null); // { token, deep_link, status }
+  const [copied, setCopied]           = useState(false); // OTP copy feedback
   const canvasRef = useRef(null);
 
   // Animate demo graph
@@ -327,6 +328,19 @@ export default function Login() {
     init();
     return () => { cancelled = true; clearInterval(pollInterval); };
   }, [login]);
+
+  const handleCopyOtp = (otp) => {
+    if (!otp) return;
+    navigator.clipboard.writeText(otp).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleOpenBot = () => {
+    if (botSession && botSession.otp) {
+      navigator.clipboard.writeText(botSession.otp).catch(() => {});
+    }
+  };
 
   const handleDeveloperBypass = async () => {
     try {
@@ -536,24 +550,55 @@ export default function Login() {
               
               {botSession && botSession.otp && (
                 <div style={{ marginBottom: '1rem' }}>
-                  <div style={{
-                    display: 'inline-flex',
-                    gap: '0.5rem',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    padding: '0.6rem 1.25rem',
-                    background: 'rgba(244,239,235,0.03)',
-                    border: '1px solid rgba(244,239,235,0.08)',
-                    borderRadius: 6,
-                    fontFamily: '"JetBrains Mono", monospace',
-                    fontSize: '1.25rem',
-                    fontWeight: 700,
-                    letterSpacing: '0.2em',
-                    color: '#CFA365',
-                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)',
-                    textIndent: '0.1em'
-                  }}>
-                    {botSession.otp}
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <div style={{
+                      display: 'inline-flex',
+                      gap: '0.5rem',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      padding: '0.6rem 1.25rem',
+                      background: 'rgba(244,239,235,0.03)',
+                      border: '1px solid rgba(244,239,235,0.08)',
+                      borderRadius: 6,
+                      fontFamily: '"JetBrains Mono", monospace',
+                      fontSize: '1.25rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.2em',
+                      color: '#CFA365',
+                      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)',
+                      textIndent: '0.1em'
+                    }}>
+                      {botSession.otp}
+                    </div>
+                    <button
+                      onClick={() => handleCopyOtp(botSession.otp)}
+                      style={{
+                        padding: '0.65rem 0.8rem',
+                        background: 'rgba(207,163,101,0.08)',
+                        border: '1px solid rgba(207,163,101,0.2)',
+                        borderRadius: 6,
+                        color: '#CFA365',
+                        fontSize: '0.8rem',
+                        fontFamily: '"JetBrains Mono", monospace',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s, border-color 0.15s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem'
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(207,163,101,0.15)'; e.currentTarget.style.borderColor = 'rgba(207,163,101,0.4)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(207,163,101,0.08)'; e.currentTarget.style.borderColor = 'rgba(207,163,101,0.2)'; }}
+                    >
+                      {copied ? 'Copied! ✓' : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                          </svg>
+                          Copy
+                        </>
+                      )}
+                    </button>
                   </div>
                   <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 11, color: 'rgba(244,239,235,0.4)', marginTop: '0.5rem', lineHeight: 1.4 }}>
                     Send this 6-digit code to the bot to log in instantly.
@@ -565,6 +610,7 @@ export default function Login() {
                 href={botSession ? `https://t.me/${botSession.bot_username}` : `https://t.me/AtriumHub_bot`}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={handleOpenBot}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
                   padding: '0.6rem 1.25rem',
