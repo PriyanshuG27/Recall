@@ -222,7 +222,7 @@ export default function Login() {
       .then(async res => {
         const body = await res.json().catch(() => ({}));
         if (res.ok) {
-          login({ id: body.id, chat_id: body.chat_id, drive_connected: body.drive_connected, google_last_sync: body.google_last_sync });
+          login({ id: body.id, chat_id: body.chat_id, drive_connected: body.drive_connected, google_last_sync: body.google_last_sync, token: body.token });
           setTwaDebug({ step: 'success', detail: `Logged in as user ${body.id}` });
         } else {
           setTwaDebug({ step: 'backend rejected', detail: `${res.status}: ${body.detail || JSON.stringify(body)}` });
@@ -260,7 +260,7 @@ export default function Login() {
           const check = await fetch('/auth/me');
           if (check.ok) {
             const profile = await check.json();
-            login({ id: profile.id, chat_id: profile.chat_id, drive_connected: profile.drive_connected, google_last_sync: profile.google_last_sync });
+            login({ id: profile.id, chat_id: profile.chat_id, drive_connected: profile.drive_connected, google_last_sync: profile.google_last_sync, token: profile.token });
           }
         } else {
           const body = await res.json().catch(() => ({}));
@@ -317,7 +317,7 @@ export default function Login() {
               const profile_res = await fetch('/auth/me');
               if (profile_res.ok) {
                 const profile = await profile_res.json();
-                login({ id: profile.id, chat_id: profile.chat_id, drive_connected: profile.drive_connected, google_last_sync: profile.google_last_sync });
+                login({ id: profile.id, chat_id: profile.chat_id, drive_connected: profile.drive_connected, google_last_sync: profile.google_last_sync, token: profile.token });
               }
             }
           } catch (_) { /* network blip */ }
@@ -350,7 +350,7 @@ export default function Login() {
         const check = await fetch('/auth/me');
         if (check.ok) {
           const profile = await check.json();
-          login({ id: profile.id, chat_id: profile.chat_id });
+          login({ id: profile.id, chat_id: profile.chat_id, token: profile.token });
         }
       } else {
         setError('Bypass login failed.');
