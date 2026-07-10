@@ -3040,6 +3040,7 @@ async def get_remote_ai_timings():
 async def setup_telegram_webhook(request: Request):
     """Registers the Telegram bot webhook using the server's own config variables."""
     import httpx
+    from backend.config import settings
     if not settings.TELEGRAM_BOT_TOKEN:
         return {"status": "error", "message": "TELEGRAM_BOT_TOKEN is not configured on this server."}
 
