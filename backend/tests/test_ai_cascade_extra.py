@@ -66,14 +66,15 @@ async def test_ai_cascade_tier_fallback():
     with mock.patch("backend.services.ai_cascade.facade.settings.MODAL_API_TOKEN", "123"):
         with mock.patch("backend.services.ai_cascade.facade.settings.GROQ_API_KEY", "123"):
             with mock.patch("backend.services.ai_cascade.facade.settings.GEMINI_API_KEY", "123"):
-                with mock.patch.object(cascade, '_call_modal_summary', side_effect=Exception("Modal Failed")) as mock_modal:
-                    with mock.patch.object(cascade, '_call_groq_summary', side_effect=Exception("Groq Failed")) as mock_groq:
-                        with mock.patch.object(cascade, '_call_gemini_summary', return_value='{"summary": "gemini success"}') as mock_gemini:
-                            res = await cascade._run_summary_cascade("test text", chat_id="123")
-                            assert mock_modal.called
-                            assert mock_groq.called
-                            assert mock_gemini.called
-                            assert isinstance(res, str) or isinstance(res, dict)
+                with mock.patch("backend.services.ai_cascade.facade.settings.COMPUTE_PROVIDER", None):
+                    with mock.patch.object(cascade, '_call_modal_summary', side_effect=Exception("Modal Failed")) as mock_modal:
+                        with mock.patch.object(cascade, '_call_groq_summary', side_effect=Exception("Groq Failed")) as mock_groq:
+                            with mock.patch.object(cascade, '_call_gemini_summary', return_value='{"summary": "gemini success"}') as mock_gemini:
+                                res = await cascade._run_summary_cascade("test text", chat_id="123")
+                                assert mock_modal.called
+                                assert mock_groq.called
+                                assert mock_gemini.called
+                                assert isinstance(res, str) or isinstance(res, dict)
 
 @pytest.mark.asyncio
 async def test_dlq_timing_before_bookmark_save():
