@@ -136,7 +136,7 @@ describe('Header', () => {
 
     await waitFor(() => {
       // Logo watermark is present
-      expect(screen.getByText('Atrium.')).toBeInTheDocument();
+      expect(screen.getByText('Atrium')).toBeInTheDocument();
       // Profile trigger button is present
       expect(screen.getByRole('button', { name: /Profile menu/i })).toBeInTheDocument();
     });

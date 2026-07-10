@@ -223,20 +223,28 @@ function LiquidOrb({ onClick }) {
       
       const rx = cx - 4.5 + shiftX;
       const ry = cy - 7 + shiftY;
-      
-      // Left leg of A
-      ctx.moveTo(rx, ry + 14);
-      ctx.lineTo(rx + 4.5, ry);
-      
-      // Right leg of A
-      ctx.moveTo(rx + 4.5, ry);
-      ctx.lineTo(rx + 9, ry + 14);
-      
-      // Crossbar of A
-      ctx.moveTo(rx + 1.8, ry + 8);
-      ctx.lineTo(rx + 7.2, ry + 8);
-      
+      // Draw Celestial Arch legs and vault dome (R2C2)
+      ctx.moveTo(rx + 2, ry + 14);
+      ctx.lineTo(rx + 2, ry + 7.5);
+      ctx.quadraticCurveTo(rx + 4.5, ry + 5, rx + 7, ry + 7.5);
+      ctx.lineTo(rx + 7, ry + 14);
       ctx.stroke();
+
+      // Draw floating keystone block at the top
+      ctx.beginPath();
+      ctx.moveTo(rx + 3, ry + 2);
+      ctx.lineTo(rx + 6, ry + 2);
+      ctx.lineTo(rx + 5.3, ry + 3.8);
+      ctx.lineTo(rx + 3.7, ry + 3.8);
+      ctx.closePath();
+      ctx.fillStyle = hoverRef.current ? '#dfb375' : '#cfa365';
+      ctx.fill();
+
+      // Draw floating celestial star inside the archway
+      ctx.beginPath();
+      ctx.arc(rx + 4.5, ry + 9.5, 0.8, 0, Math.PI * 2);
+      ctx.fillStyle = hoverRef.current ? '#dfb375' : '#cfa365';
+      ctx.fill();
 
       if (!isMobile) {
         animationFrameId = requestAnimationFrame(render);

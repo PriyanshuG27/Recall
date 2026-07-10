@@ -502,8 +502,26 @@ export default function Login() {
           <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, color: 'rgba(207,163,101,0.5)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>
             Personal knowledge OS
           </div>
-          <h1 style={{ fontFamily: '"Outfit", sans-serif', fontWeight: 800, fontSize: '2.5rem', lineHeight: 1.05, letterSpacing: '-0.05em', color: '#F0EDE8', margin: '0 0 0.5rem 0' }}>
-            Atrium.
+          <h1 style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            fontFamily: '"DM Serif Display", Georgia, serif',
+            fontWeight: 400,
+            fontSize: '2.5rem',
+            lineHeight: 1.05,
+            letterSpacing: '-0.01em',
+            color: '#F0EDE8',
+            margin: '0 0 0.5rem 0'
+          }}>
+            <svg viewBox="0 0 100 100" style={{ width: '38px', height: '38px', fill: 'var(--accent-gold)' }} aria-hidden="true">
+              <path d="M 25 85 V 50 A 25 25 0 0 1 75 50 V 85 H 63 V 50 A 13 13 0 0 0 37 50 V 85 Z" />
+              <circle cx="50" cy="48" r="3.5" />
+              <circle cx="43" cy="62" r="2.2" />
+              <circle cx="57" cy="67" r="2.2" />
+              <circle cx="47" cy="76" r="1.3" />
+            </svg>
+            Atrium
           </h1>
           <p style={{ fontFamily: '"Inter", sans-serif', fontSize: '0.9375rem', color: 'rgba(244,239,235,0.45)', lineHeight: 1.5, margin: 0, minHeight: '1.5em' }}>
             {displayText}

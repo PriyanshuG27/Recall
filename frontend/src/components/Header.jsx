@@ -204,14 +204,26 @@ export default function Header({ onSearch, dueQuizCount, viewMode = 'graph', onV
           href="/"
           className="header-logo"
           style={{
-            opacity: 0.4,
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            pointerEvents: 'auto'
+            opacity: 0.85,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            textDecoration: 'none',
+            color: 'var(--text-signal)',
+            pointerEvents: 'auto',
+            fontFamily: "'DM Serif Display', Georgia, serif",
+            fontSize: '1.15rem',
+            letterSpacing: '-0.01em',
           }}
         >
-          Atrium.
+          <svg viewBox="0 0 100 100" style={{ width: '18px', height: '18px', fill: 'var(--accent-gold)' }} aria-hidden="true">
+            <path d="M 25 85 V 50 A 25 25 0 0 1 75 50 V 85 H 63 V 50 A 13 13 0 0 0 37 50 V 85 Z" />
+            <circle cx="50" cy="48" r="3.5" />
+            <circle cx="43" cy="62" r="2.2" />
+            <circle cx="57" cy="67" r="2.2" />
+            <circle cx="47" cy="76" r="1.3" />
+          </svg>
+          Atrium
         </a>
 
         {user && (

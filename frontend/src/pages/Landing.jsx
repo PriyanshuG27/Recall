@@ -831,8 +831,8 @@ export default function Landing() {
 
 
 
-  /* Scramble headline (just "Atrium." decodes first) */
-  const scrambled = useScramble('Atrium.', true, 200);
+  /* Scramble headline (just "Atrium" decodes first) */
+  const scrambled = useScramble('Atrium', true, 200);
 
   /* Pinned scroll step tracker (robust window-center proximity logic) */
   const [activeStep, setActiveStep] = useState(0);
@@ -947,7 +947,16 @@ export default function Landing() {
 
       {/* NAV */}
       <nav className={`lp-nav ${navSolid ? 'solid' : ''}`}>
-        <div className="lp-logo">✦ Atrium</div>
+        <div className="lp-logo" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: "'DM Serif Display', Georgia, serif", fontSize: '1.25rem', fontWeight: 400, color: 'var(--text-signal, #F4EFEB)' }}>
+          <svg viewBox="0 0 100 100" style={{ width: '20px', height: '20px', fill: 'var(--accent-gold, #CFA365)' }} aria-hidden="true">
+            <path d="M 25 85 V 50 A 25 25 0 0 1 75 50 V 85 H 63 V 50 A 13 13 0 0 0 37 50 V 85 Z" />
+            <circle cx="50" cy="48" r="3.5" />
+            <circle cx="43" cy="62" r="2.2" />
+            <circle cx="57" cy="67" r="2.2" />
+            <circle cx="47" cy="76" r="1.3" />
+          </svg>
+          Atrium
+        </div>
         <div className="lp-nav-r">
           <button className="lp-nav-link" onClick={() => go('/login')}>Sign in</button>
           <div ref={magNav.ref} style={magNav.style}>
@@ -968,7 +977,7 @@ export default function Landing() {
           </div>
 
           {/* Headline Scramble */}
-          <h1 className="lp-h1" aria-label="Atrium.">
+          <h1 className="lp-h1" aria-label="Atrium">
             <em>{scrambled}</em>
           </h1>
 
@@ -1148,7 +1157,7 @@ export default function Landing() {
       <section className="lp-final">
         <div className="lp-final-bg" aria-hidden="true" />
         <h2 className="lp-final-h">
-          <LetterReveal text="Enter Atrium." baseDelay={0.1} stagger={0.055} />
+          <LetterReveal text="Enter Atrium" baseDelay={0.1} stagger={0.055} />
         </h2>
         <p className="lp-final-sub">Your thinking deserves a home.</p>
         <div className="lp-final-cta">

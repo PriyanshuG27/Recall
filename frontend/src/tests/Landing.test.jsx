@@ -23,7 +23,7 @@ describe('Landing Page Component', () => {
     render(<Landing />);
 
     // Header logo
-    expect(screen.getByText('✦ Atrium')).toBeInTheDocument();
+    expect(screen.getByText('Atrium', { selector: '.lp-logo' })).toBeInTheDocument();
     
     // Beta Badge
     expect(screen.getByText(/Now in private beta/i)).toBeInTheDocument();

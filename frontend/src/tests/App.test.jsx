@@ -66,7 +66,7 @@ describe('App PWA and Session Tracking', () => {
       </ToastProvider>
     );
 
-    expect(screen.getByText(/Atrium\./i)).toBeInTheDocument();
+    expect(screen.getByText(/Atrium/i)).toBeInTheDocument();
   });
 
   it('redirects unauthenticated users to /login', async () => {

@@ -25,7 +25,7 @@ describe('Login Component', () => {
       expect(fetchSpy).toHaveBeenCalledWith('/auth/me');
     });
 
-    expect(screen.getByText('Atrium.')).toBeInTheDocument();
+    expect(screen.getByText('Atrium')).toBeInTheDocument();
     
     await waitFor(() => {
       expect(screen.getByText(/Personal knowledge OS/i)).toBeInTheDocument();

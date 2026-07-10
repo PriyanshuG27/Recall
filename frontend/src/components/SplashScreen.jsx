@@ -85,14 +85,24 @@ export default function SplashScreen() {
         opacity: 0,
       }}>
         <h2 style={{
-          fontFamily: 'var(--font-display, inherit)',
-          fontSize: '2rem',
-          fontWeight: 700,
+          fontFamily: "'DM Serif Display', Georgia, serif",
+          fontSize: '2.5rem',
+          fontWeight: 400,
           color: 'var(--accent-gold, #CFA365)',
           margin: 0,
-          letterSpacing: '-0.04em',
+          letterSpacing: '-0.02em',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
         }}>
-          Atrium.
+          <svg viewBox="0 0 100 100" style={{ width: '32px', height: '32px', fill: 'var(--accent-gold)' }} aria-hidden="true">
+            <path d="M 25 85 V 50 A 25 25 0 0 1 75 50 V 85 H 63 V 50 A 13 13 0 0 0 37 50 V 85 Z" />
+            <circle cx="50" cy="48" r="3.5" />
+            <circle cx="43" cy="62" r="2.2" />
+            <circle cx="57" cy="67" r="2.2" />
+            <circle cx="47" cy="76" r="1.3" />
+          </svg>
+          Atrium
         </h2>
         <p style={{
           fontFamily: 'var(--font-mono, monospace)',
