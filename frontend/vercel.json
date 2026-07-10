@@ -11,6 +11,10 @@
     {
       "source": "/webhook",
       "destination": "https://atrium-backend-0249.onrender.com/webhook"
+    },
+    {
+      "source": "/((?!api|auth|webhook|assets|icons|manifest|registerSW|favicon|vite).*)",
+      "destination": "/index.html"
     }
   ]
 }
