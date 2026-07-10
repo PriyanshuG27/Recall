@@ -617,19 +617,29 @@ async def process_task(task: Dict[str, Any], task_json: Optional[str] = None, se
                         "attempted_tiers": [0],
                         "last_error": error_message
                     }
-                    # Checkout a clean connection to guarantee write success even if primary timed out
-                    async with db_conn._pool.connection() as fallback_conn:
-                        await fallback_conn.execute("SET statement_timeout = '30s'")
-                        await write_to_dlq(user_id, task_payload, error_message, fallback_conn)
-                        await save_minimal_bookmark(user_id, content_type or "unknown", file_id, text_content, fallback_conn)
-                        try:
-                            from backend.services.streak_service import update_streak
-                            await update_streak(user_id, fallback_conn)
-                        except Exception as streak_err:
-                            logger.error("Failed to update fallback user streak: %s", streak_err)
-                        await fallback_conn.commit()
-                        
-                    await send_failure_message(chat_id, content_type or "unknown")
+
+                    # If this task already came from the DLQ and failed again,
+                    # discard it permanently — do NOT re-DLQ or re-notify the user.
+                    # This prevents the infinite startup-requeue → fail → DLQ loop.
+                    if task_payload.get("from_dlq"):
+                        logger.warning(
+                            "DLQ retry failed permanently for update_id=%s user=%s — discarding.",
+                            update_id, user_id
+                        )
+                    else:
+                        # Checkout a clean connection to guarantee write success even if primary timed out
+                        async with db_conn._pool.connection() as fallback_conn:
+                            await fallback_conn.execute("SET statement_timeout = '30s'")
+                            await write_to_dlq(user_id, task_payload, error_message, fallback_conn)
+                            await save_minimal_bookmark(user_id, content_type or "unknown", file_id, text_content, fallback_conn)
+                            try:
+                                from backend.services.streak_service import update_streak
+                                await update_streak(user_id, fallback_conn)
+                            except Exception as streak_err:
+                                logger.error("Failed to update fallback user streak: %s", streak_err)
+                            await fallback_conn.commit()
+                            
+                        await send_failure_message(chat_id, content_type or "unknown")
                 except Exception as dlq_err:
                     logger.error("Failed to complete fallback DLQ/bookmark flow: %s", dlq_err)
     finally:

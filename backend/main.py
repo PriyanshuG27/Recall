@@ -210,10 +210,17 @@ async def lifespan(app: FastAPI):
         if _pool is not None:
             async with _pool.connection() as conn:
                 async with conn.cursor() as cur:
+                    # 1. Clean up already-retried DLQ entries older than 2h to stop the spam loop
+                    await cur.execute(
+                        "DELETE FROM dead_letter_queue WHERE retried = TRUE AND failed_at < NOW() - INTERVAL '2 hours';"
+                    )
+                    deleted = cur.rowcount if cur.rowcount is not None else 0
+
+                    # 2. Requeue recent unretried tasks (6h window, not 24h)
                     await cur.execute(
                         """
                         SELECT id, task_payload FROM dead_letter_queue
-                        WHERE retried = FALSE AND failed_at > NOW() - INTERVAL '24 hours'
+                        WHERE retried = FALSE AND failed_at > NOW() - INTERVAL '6 hours'
                         LIMIT 5;
                         """
                     )
@@ -226,13 +233,20 @@ async def lifespan(app: FastAPI):
                             payload = json.loads(payload_raw)
                         else:
                             payload = payload_raw
-                            
+
+                        # Tag the payload so the worker knows this is a DLQ retry
+                        # and won't re-DLQ it if it fails again
+                        payload["from_dlq"] = True
+
                         await redis.lpush("atrium:tasks", json.dumps(payload))
                         await cur.execute("UPDATE dead_letter_queue SET retried = TRUE WHERE id = %s;", (dlq_id,))
                         requeued_count += 1
                         
-                    if requeued_count > 0:
+                    if deleted > 0 or requeued_count > 0:
                         await conn.commit()
+                    if deleted > 0:
+                        logger.info("Cleaned up %d old retried DLQ entries.", deleted)
+                    if requeued_count > 0:
                         logger.info("Auto-requeued %d unretried tasks from DLQ on startup", requeued_count)
     except Exception as startup_retry_err:
         logger.error("Failed to execute startup DLQ auto-retry: %s", startup_retry_err)
