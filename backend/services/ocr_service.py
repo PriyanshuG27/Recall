@@ -208,6 +208,7 @@ async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
     b64_image = base64.b64encode(processed_bytes).decode("utf-8")
     
     models = [
+        "meta/llama-4-maverick-17b-128e-instruct",
         "nvidia/nemotron-nano-12b-v2-vl",
         "nvidia/cosmos3-nano-reasoner"
     ]
@@ -235,7 +236,7 @@ async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
         
         try:
             # Lower timeout per model so fallback transitions quickly
-            async with httpx.AsyncClient(timeout=20.0) as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
