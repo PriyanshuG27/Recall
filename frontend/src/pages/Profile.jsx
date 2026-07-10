@@ -578,6 +578,40 @@ export default function Profile() {
           .cognitive-summary-avatar-wrap {
             margin: 0 auto !important;
           }
+          
+          /* Stepper responsive adjustments */
+          .stepper-container {
+            gap: 1.25rem !important;
+          }
+          .stepper-item {
+            gap: 1rem !important;
+          }
+          .stepper-item::before {
+            left: 18px !important;
+            top: 18px !important;
+            bottom: calc(-18px - 1.25rem) !important;
+          }
+          .stepper-item.unlocked-segment::after {
+            left: 18px !important;
+            top: 18px !important;
+            bottom: calc(-18px - 1.25rem) !important;
+          }
+          .stepper-dot {
+            width: 36px !important;
+            height: 36px !important;
+            font-size: 0.85rem !important;
+          }
+          .stepper-label {
+            font-size: 0.88rem !important;
+          }
+          .stepper-desc {
+            font-size: 0.72rem !important;
+            margin-top: 0.05rem !important;
+          }
+          .stepper-requirement-badge {
+            font-size: 0.6rem !important;
+            padding: 1px 4px !important;
+          }
         }
 
         .cognitive-summary-card {
@@ -1392,7 +1426,7 @@ export default function Profile() {
                     {isUnlocked ? '✓' : MILESTONE_ICONS[m.key]}
                   </div>
                   <div className="stepper-content">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem 0.75rem', flexWrap: 'wrap' }}>
                       <span className="stepper-label">{m.label}</span>
                       <span className="stepper-requirement-badge">
                         {m.threshold} saves
