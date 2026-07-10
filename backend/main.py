@@ -435,6 +435,12 @@ app.include_router(metrics_router, prefix="/api")
     summary="Health check",
     response_description="Service is alive",
 )
+@app.head(
+    "/health",
+    tags=["ops"],
+    summary="Health check",
+    response_description="Service is alive",
+)
 async def health() -> dict:
     """
     Lightweight liveness probe — no DB queries, no external calls.
