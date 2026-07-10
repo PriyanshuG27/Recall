@@ -2,15 +2,15 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://recall-backend.onrender.com/api/:path*"
+      "destination": "https://atrium-backend-0249.onrender.com/api/:path*"
     },
     {
       "source": "/auth/:path*",
-      "destination": "https://recall-backend.onrender.com/auth/:path*"
+      "destination": "https://atrium-backend-0249.onrender.com/auth/:path*"
     },
     {
       "source": "/webhook",
-      "destination": "https://recall-backend.onrender.com/webhook"
+      "destination": "https://atrium-backend-0249.onrender.com/webhook"
     }
   ]
 }
