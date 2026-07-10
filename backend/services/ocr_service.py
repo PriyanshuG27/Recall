@@ -176,35 +176,59 @@ def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
         
     return {"ocr_text": ocr_result_text, "trigger_gemini_fallback": False}
 
+async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
+    """Calls NVIDIA NIM OCR model (Llama 3.2 11B Vision Instruct) via OpenAI-compatible API."""
+    import base64
+    import httpx
+    
+    url = "https://integrate.api.nvidia.com/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    b64_image = base64.b64encode(image_bytes).decode("utf-8")
+    payload = {
+        "model": "nvidia/llama-3.2-90b-vision-instruct",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Extract all legible text from this image as raw text. Do not summarize, describe, or add explanations."},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{b64_image}"
+                        }
+                    }
+                ]
+            }
+        ],
+        "max_tokens": 1024,
+        "temperature": 0.0
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                extracted = data["choices"][0]["message"]["content"].strip()
+                return extracted
+            else:
+                logger.warning("NVIDIA NIM OCR failed with status %d: %s", resp.status_code, resp.text)
+                return None
+    except Exception as e:
+        logger.error("Error calling NVIDIA NIM OCR: %s", e)
+        return None
+
+
 async def perform_ocr(img_or_path_or_bytes: Union[Image.Image, str, bytes]) -> str:
     """
     Unified entry point for performing OCR. Supports PIL Image, filepath string, or bytes.
-    Enforces a strict 30-second processing timeout per image.
+    Enforces a cascade: PaddleOCR -> NVIDIA NIM OCR -> Gemini.
     """
-    if getattr(settings, "OCR_PROVIDER", "local") == "remote":
-        # Convert input to raw bytes in memory (no disk writes)
-        if isinstance(img_or_path_or_bytes, bytes):
-            image_bytes = img_or_path_or_bytes
-        elif isinstance(img_or_path_or_bytes, str):
-            with open(img_or_path_or_bytes, "rb") as f:
-                image_bytes = f.read()
-        else:
-            buf = io.BytesIO()
-            img_or_path_or_bytes.save(buf, format="PNG")
-            image_bytes = buf.getvalue()
-        
-        from backend.services.remote_ai_client import generate_remote_ocr
-        try:
-            return await generate_remote_ocr(image_bytes)
-        except Exception as e:
-            logger.error("Remote OCR failed: %s. Returning empty.", e)
-            return ""
-
-    if not check_paddleocr_available():
-        logger.warning("PaddleOCR not installed. OCR skipped.")
-        return ""
-        
-    # Convert input to raw bytes in memory (no disk writes)
+    # 1. Convert input to raw bytes in memory (no disk writes)
     if isinstance(img_or_path_or_bytes, bytes):
         image_bytes = img_or_path_or_bytes
     elif isinstance(img_or_path_or_bytes, str):
@@ -225,22 +249,34 @@ async def perform_ocr(img_or_path_or_bytes: Union[Image.Image, str, bytes]) -> s
             logger.error("Failed to serialize PIL Image: %s", e)
             return ""
 
+    ocr_text = ""
+
+    # Step A: Try PaddleOCR (Remote or Local)
     try:
-        loop = asyncio.get_running_loop()
-        executor = _get_ocr_executor()
-        # Run in a ProcessPoolExecutor so PaddleOCR's C++ GIL-blocking
-        # compilation/inference cannot freeze uvicorn threads.
-        # Enforce 120s timeout to accommodate cold-start model compilation.
-        result = await asyncio.wait_for(
-            loop.run_in_executor(executor, preprocess_and_ocr_image, image_bytes),
-            timeout=120.0
-        )
-        if result.get("trigger_gemini_fallback"):
-            return ""
-        return result.get("ocr_text") or ""
-    except asyncio.TimeoutError:
-        logger.error("OCR preprocessing and extraction timed out after 120 seconds.")
-        return ""
+        if getattr(settings, "OCR_PROVIDER", "local") == "remote":
+            from backend.services.remote_ai_client import generate_remote_ocr
+            ocr_text = await generate_remote_ocr(image_bytes)
+        else:
+            if check_paddleocr_available():
+                loop = asyncio.get_running_loop()
+                executor = _get_ocr_executor()
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(executor, preprocess_and_ocr_image, image_bytes),
+                    timeout=120.0
+                )
+                if not result.get("trigger_gemini_fallback"):
+                    ocr_text = result.get("ocr_text") or ""
     except Exception as e:
-        logger.error("Exception in perform_ocr pipeline: %s", e)
-        return ""
+        logger.warning("PaddleOCR step failed: %s", e)
+
+    # Step B: Fallback to NVIDIA NIM OCR if PaddleOCR returned low-content or failed
+    word_count = len(ocr_text.split())
+    if (not ocr_text or word_count < 10) and settings.NVIDIA_API_KEY:
+        logger.info("PaddleOCR returned low-content text (%d words). Triggering NVIDIA NIM OCR fallback...", word_count)
+        nvidia_text = await perform_nvidia_ocr(image_bytes, settings.NVIDIA_API_KEY)
+        if nvidia_text:
+            logger.info("NVIDIA NIM OCR fallback succeeded. Extracted length: %d chars", len(nvidia_text))
+            return nvidia_text
+
+    return ocr_text
+

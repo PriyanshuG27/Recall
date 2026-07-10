@@ -250,3 +250,8 @@ audit_results.json
 # React Doctor reports
 react-doctor-report*.txt
 frontend/react-doctor-report*.txt
+
+# Azure VM Keys & Configs
+Recall-key.pem
+Dockerfile.aiservice
+
