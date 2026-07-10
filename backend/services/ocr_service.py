@@ -208,9 +208,7 @@ async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
     b64_image = base64.b64encode(processed_bytes).decode("utf-8")
     
     models = [
-        "meta/llama-3.2-11b-vision-instruct",
-        "meta/llama-4-maverick-17b-128e-instruct",
-        "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+        "nvidia/nemoretriever-parse",
         "nvidia/nemotron-nano-12b-v2-vl"
     ]
     
