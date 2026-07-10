@@ -36,9 +36,6 @@ yt-dlp==2026.6.9
 # Local Environment Support
 python-dotenv==1.2.2
 
-# Local Embeddings (FastEmbed ONNX for low-RAM cloud deployment)
-fastembed==0.8.0
-
 # Testing
 pytest==9.1.1
 pytest-asyncio==1.4.0
