@@ -323,12 +323,13 @@ export default function Login() {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        padding: '3rem 3rem 3rem 2.5rem',
+        padding: '2rem 3rem 2rem 2.5rem',
         position: 'relative',
         zIndex: 10,
         borderLeft: '1px solid rgba(244,239,235,0.05)',
         background: 'rgba(10,9,14,0.96)',
         backdropFilter: 'blur(20px)',
+        overflowY: 'auto',
       }}>
 
         {/* Back Button */}
