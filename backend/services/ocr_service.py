@@ -189,7 +189,7 @@ async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
     
     b64_image = base64.b64encode(image_bytes).decode("utf-8")
     payload = {
-        "model": "meta/llama-3.2-90b-vision-instruct",
+        "model": "meta/llama-3.2-11b-vision-instruct",
         "messages": [
             {
                 "role": "user",
@@ -209,7 +209,7 @@ async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
     }
     
     try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
+        async with httpx.AsyncClient(timeout=45.0) as client:
             resp = await client.post(url, json=payload, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()

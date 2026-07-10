@@ -210,7 +210,7 @@ export default function Login() {
   // Telegram widget
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = 'https://telegram.org/js/telegram-web-app.js';
+    script.src = 'https://telegram.org/js/telegram-widget.js';
     script.setAttribute('data-telegram-login', import.meta.env.VITE_BOT_USERNAME || '');
     script.setAttribute('data-size', 'large');
     script.setAttribute('data-radius', '4');
