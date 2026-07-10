@@ -166,6 +166,20 @@ async def lifespan(app: FastAPI):
     # Open the async DB connection pool
     await open_pool()
 
+    # Dynamic startup migration for initial onboarding completion column
+    try:
+        from backend.db.connection import _pool
+        if _pool is not None:
+            async with _pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "ALTER TABLE users ADD COLUMN IF NOT EXISTS initial_onboarding_completed BOOLEAN DEFAULT FALSE;"
+                    )
+                await conn.commit()
+            logger.info("Database startup migration: initial_onboarding_completed column ensured.")
+    except Exception as migration_err:
+        logger.error("Failed to run startup database migration: %s", migration_err)
+
     # Initialize shared HTTP client
     import httpx
     app.state.client = httpx.AsyncClient(timeout=10.0)

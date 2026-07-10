@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
     first_name           VARCHAR(100),
     username             VARCHAR(100),
     pulse_score          NUMERIC DEFAULT 0,
+    initial_onboarding_completed BOOLEAN DEFAULT FALSE,
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

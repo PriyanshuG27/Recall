@@ -825,11 +825,19 @@ async def telegram_webhook(
                 command_part = "/file"
             
             if command_part == "/start":
-                # Check item count to see if we should start onboarding
+                # Check if user already finished onboarding
                 async with db.cursor() as cur:
-                    await cur.execute("SELECT COUNT(*) FROM items WHERE user_id = %s;", (user_id,))
-                    count_row = await cur.fetchone()
-                    item_count = count_row[0] if count_row else 0
+                    await cur.execute("SELECT initial_onboarding_completed FROM users WHERE id = %s;", (user_id,))
+                    row = await cur.fetchone()
+                    initial_onboarding_completed = row[0] if row else False
+                    
+                if not initial_onboarding_completed:
+                    async with db.cursor() as cur:
+                        await cur.execute("SELECT COUNT(*) FROM items WHERE user_id = %s;", (user_id,))
+                        count_row = await cur.fetchone()
+                        item_count = count_row[0] if count_row else 0
+                else:
+                    item_count = 3
                     
                 if item_count < 3:
                     welcome_msg = (
@@ -858,7 +866,7 @@ async def telegram_webhook(
             elif command_part == "/reset_onboarding":
                 async with db.cursor() as cur:
                     await cur.execute("DELETE FROM items WHERE user_id = %s;", (user_id,))
-                    await cur.execute("UPDATE users SET onboarding_day = 0, onboarding_last_sent = NULL, timezone_offset = 0 WHERE id = %s;", (user_id,))
+                    await cur.execute("UPDATE users SET onboarding_day = 0, onboarding_last_sent = NULL, timezone_offset = 0, initial_onboarding_completed = FALSE WHERE id = %s;", (user_id,))
                     
                     # Log audit
                     from backend.services.audit_service import log_audit
@@ -1482,13 +1490,19 @@ async def telegram_webhook(
             is_onboarding = True
         else:
             async with db.cursor() as cur:
-                await cur.execute("SELECT COUNT(*) FROM items WHERE user_id = %s;", (user_id,))
-                count_row = await cur.fetchone()
-                item_count = count_row[0] if count_row else 0
-            if item_count < 3:
-                is_onboarding = True
-                onboarding_step_str = "1"
-                await redis.setex(f"onboarding_step:{chat_id}", 86400, "1")
+                await cur.execute("SELECT initial_onboarding_completed FROM users WHERE id = %s;", (user_id,))
+                row = await cur.fetchone()
+                initial_onboarding_completed = row[0] if row else False
+                
+            if not initial_onboarding_completed:
+                async with db.cursor() as cur:
+                    await cur.execute("SELECT COUNT(*) FROM items WHERE user_id = %s;", (user_id,))
+                    count_row = await cur.fetchone()
+                    item_count = count_row[0] if count_row else 0
+                if item_count < 3:
+                    is_onboarding = True
+                    onboarding_step_str = "1"
+                    await redis.setex(f"onboarding_step:{chat_id}", 86400, "1")
 
         if is_onboarding:
             step = int(onboarding_step_str)
@@ -1962,6 +1976,10 @@ async def advance_onboarding_step(chat_id: str, user_id: int, current_step: int,
     else:
         # Completed onboarding!
         await redis.delete(f"onboarding_step:{chat_id}")
+        async with db.cursor() as cur:
+            await cur.execute("UPDATE users SET initial_onboarding_completed = TRUE WHERE id = %s;", (user_id,))
+            await db.commit()
+            
         if background_tasks:
             background_tasks.add_task(trigger_first_session_magic, chat_id, user_id, base_url)
         else:
