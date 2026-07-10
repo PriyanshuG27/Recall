@@ -844,7 +844,10 @@ async def telegram_webhook(
                         "Welcome to Recall! Let's build your initial mind-graph.\n\n"
                         "Question 1/3: What is a book or article you read recently that changed how you think?"
                     )
-                    markup = {"inline_keyboard": [[{"text": "Skip Question ⏭️", "callback_data": "onboarding_skip:1"}]]}
+                    markup = {"inline_keyboard": [
+                        [{"text": "Open Atrium 🧠", "web_app": {"url": settings.WEBSITE_URL}}],
+                        [{"text": "Skip Question ⏭️", "callback_data": "onboarding_skip:1"}]
+                    ]}
                     await redis.setex(f"onboarding_step:{chat_id}", 86400, "1")
                     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
                     payload = {
@@ -858,7 +861,17 @@ async def telegram_webhook(
                         "Welcome back to Recall! Forward me any link, voice note, PDF, or image and I'll remember it for you.\n\n"
                         "💡 <b>We also support screenshots!</b> You can send us screenshots of your <b>WhatsApp Saved Messages</b> (or chats containing links), and we will automatically scrape, clean, and save them for you!"
                     )
-                    background_tasks.add_task(send_telegram_ack, chat_id, welcome_msg_standard, "HTML")
+                    returning_markup = {"inline_keyboard": [
+                        [{"text": "Open Atrium 🧠", "web_app": {"url": settings.WEBSITE_URL}}]
+                    ]}
+                    tg_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+                    returning_payload = {
+                        "chat_id": chat_id,
+                        "text": welcome_msg_standard,
+                        "parse_mode": "HTML",
+                        "reply_markup": returning_markup
+                    }
+                    background_tasks.add_task(http_client.post, tg_url, json=returning_payload)
                     
                 logger.info("Processed /start: created/retrieved user %d for chat_id %s", user_id, chat_id)
                 return {"status": "ok", "detail": "welcome_sent"}
