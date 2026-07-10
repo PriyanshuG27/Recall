@@ -6,7 +6,7 @@ import client from '../api/client';
 export const SocketContext = createContext(null);
 
 export function SocketProvider({ children }) {
-  const { user, checkAuth } = useAuth();
+  const { user, token, checkAuth } = useAuth();
   const { addToast } = useToast();
   
   const [connectionStatus, setConnectionStatus] = useState('disconnected'); // 'connected' | 'connecting' | 'disconnected' | 'error' | 'failed'
@@ -43,7 +43,7 @@ export function SocketProvider({ children }) {
           base = `${isHttps ? 'wss:' : 'ws:'}//${base}`;
         }
       }
-      const wsUrl = `${base.replace(/\/$/, '')}/api/ws`;
+      const wsUrl = `${base.replace(/\/$/, '')}/api/ws${token ? `/${token}` : ''}`;
       
       // Prevent duplicate connection attempts if already open/connecting
       if (socketRef.current && (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING)) {
