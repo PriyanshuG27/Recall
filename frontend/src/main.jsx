@@ -23,6 +23,19 @@ if (typeof window !== 'undefined') {
     }
     return originalFetch(url, options);
   };
+
+  // Auto-reload on stale chunk errors (Vite lazy imports after re-deployment)
+  window.addEventListener('unhandledrejection', (event) => {
+    const msg = event.reason?.message || '';
+    if (
+      msg.includes('Failed to fetch dynamically imported module') ||
+      msg.includes('Importing a module script failed') ||
+      msg.includes('Unable to preload CSS')
+    ) {
+      console.warn('[Atrium] Stale chunk detected — reloading…');
+      window.location.reload();
+    }
+  });
 }
 
 /* ── Dev-mode error overlay (shows crash message on screen) ── */
