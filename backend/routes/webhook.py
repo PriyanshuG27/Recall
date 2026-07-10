@@ -809,8 +809,27 @@ async def telegram_webhook(
                         background_tasks.add_task(send_telegram_ack, chat_id, ack_msg, "Markdown", message.get("message_id"))
                         return {"status": "ok", "detail": "reply_deferred"}
         
-        # 4.5 Check for bot commands
+        # 4.5 Check for bot commands or login OTP
         text_content = message.get("text", "")
+        if text_content:
+            stripped_text = text_content.strip()
+            # Check if it's a 6-digit OTP code
+            if len(stripped_text) == 6 and stripped_text.isdigit():
+                from backend.services.redis_client import redis as _redis
+                token = await _redis.get(f"bot_web_login_otp:{stripped_text}")
+                if token:
+                    user_id = await upsert_user(chat_id, db)
+                    await _redis.setex(f"bot_web_login:{token.decode('utf-8') if isinstance(token, bytes) else token}", 300, str(user_id))
+                    await _redis.delete(f"bot_web_login_otp:{stripped_text}")
+                    
+                    ack_msg = (
+                        "✅ <b>Browser login confirmed!</b>\n\n"
+                        "Switch back to your browser tab — you're now logged in."
+                    )
+                    background_tasks.add_task(send_telegram_ack, chat_id, ack_msg, "HTML", None, None)
+                    logger.info("Bot-session OTP login: stored token for user %d", user_id)
+                    return {"status": "ok", "detail": "web_login_otp_confirmed"}
+
         if text_content and text_content.strip().startswith("/"):
             user_id = await upsert_user(chat_id, db)
             
