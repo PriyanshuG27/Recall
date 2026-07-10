@@ -104,7 +104,8 @@ function useDemoGraph(canvasRef) {
       rafId = requestAnimationFrame(draw);
       tick();
 
-      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = '#09080C';
+      ctx.fillRect(0, 0, W, H);
 
       // ── Edges ──
       DEMO_EDGES.forEach(([si, ti]) => {
