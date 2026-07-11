@@ -245,46 +245,7 @@ export default function Login() {
     return () => clearInterval(iv);
   }, []);
 
-  // Telegram widget — callback mode (NOT redirect mode which breaks SPAs)
-  useEffect(() => {
-    // Define the global callback BEFORE the script loads
-    window.onTelegramAuth = async (user) => {
-      try {
-        // user = { id, first_name, username, photo_url, auth_date, hash }
-        const params = new URLSearchParams(
-          Object.entries(user).map(([k, v]) => [k, String(v)])
-        );
-        const res = await fetch(`/auth/telegram?${params.toString()}`);
-        if (res.ok) {
-          // Cookie is now set — check /auth/me to get the user profile
-          const check = await fetch('/auth/me');
-          if (check.ok) {
-            const profile = await check.json();
-            login({ id: profile.id, chat_id: profile.chat_id, drive_connected: profile.drive_connected, google_last_sync: profile.google_last_sync, token: profile.token });
-          }
-        } else {
-          const body = await res.json().catch(() => ({}));
-          setError(`Login failed: ${body.detail || res.status}`);
-        }
-      } catch (err) {
-        setError('Login failed. Please try again.');
-      }
-    };
 
-    const script = document.createElement('script');
-    script.src = 'https://telegram.org/js/telegram-widget.js?22';
-    script.setAttribute('data-telegram-login', import.meta.env.VITE_BOT_USERNAME || '');
-    script.setAttribute('data-size', 'large');
-    script.setAttribute('data-radius', '4');
-    script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-    script.async = true;
-    const container = document.getElementById('tg-widget');
-    if (container) container.appendChild(script);
-    return () => {
-      if (container) container.innerHTML = '';
-      delete window.onTelegramAuth;
-    };
-  }, [login]);
 
   // Bot-session browser login — auto-init + poll (only in a real browser, not inside Telegram)
   useEffect(() => {
@@ -550,110 +511,150 @@ export default function Login() {
           ))}
         </div>
 
-        {/* Telegram CTA */}
+        {/* Step-by-Step Telegram Authentication */}
         <div className="login-step" style={{ animationDelay: '0.25s', marginBottom: '1.5rem' }}>
-          <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 9, letterSpacing: '0.14em', color: 'rgba(207,163,101,0.5)', textTransform: 'uppercase', marginBottom: 10 }}>
-            Continue with
-          </div>
-          <div style={{ border: '1px solid rgba(207,163,101,0.15)', borderRadius: 8, padding: '1.25rem', animation: 'pulse-border 4s ease-in-out infinite' }}>
-            <div id="tg-widget" style={{ minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+          <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 9, letterSpacing: '0.14em', color: 'rgba(207,163,101,0.5)', textTransform: 'uppercase', marginBottom: 15 }}>
+            LOG IN VIA TELEGRAM BOT
           </div>
 
-          {/* Bot-session login — OTP style */}
-          <div style={{ marginTop: '1.5rem' }}>
-            <div style={{ textAlign: 'center', marginBottom: '0.5rem' }}>
-              <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 9, color: 'rgba(244,239,235,0.2)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
-                or log in via telegram bot
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.25rem',
+            border: '1px solid rgba(207,163,101,0.12)',
+            borderRadius: 12,
+            padding: '1.5rem',
+            background: 'rgba(7, 8, 15, 0.6)',
+            backdropFilter: 'blur(10px)'
+          }}>
+            {/* Step 1: Copy Code */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '20px', height: '20px', borderRadius: '50%',
+                  background: 'rgba(207,163,101,0.15)', color: '#CFA365',
+                  fontSize: '0.7rem', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace'
+                }}>1</span>
+                <span style={{ fontFamily: '"Inter", sans-serif', fontSize: '0.8125rem', fontWeight: 600, color: '#F0EDE8' }}>
+                  Copy your verification code
+                </span>
               </div>
-              
-              {botSession && botSession.otp && (
-                <div style={{ marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', alignItems: 'center', marginBottom: '0.5rem' }}>
-                    <div style={{
-                      display: 'inline-flex',
-                      gap: '0.5rem',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      padding: '0.6rem 1.25rem',
-                      background: 'rgba(244,239,235,0.03)',
-                      border: '1px solid rgba(244,239,235,0.08)',
-                      borderRadius: 6,
-                      fontFamily: '"JetBrains Mono", monospace',
-                      fontSize: '1.25rem',
-                      fontWeight: 700,
-                      letterSpacing: '0.2em',
-                      color: '#CFA365',
-                      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)',
-                      textIndent: '0.1em'
-                    }}>
-                      {botSession.otp}
-                    </div>
-                    <button
-                      onClick={() => handleCopyOtp(botSession.otp)}
-                      style={{
-                        padding: '0.65rem 0.8rem',
-                        background: 'rgba(207,163,101,0.08)',
-                        border: '1px solid rgba(207,163,101,0.2)',
-                        borderRadius: 6,
-                        color: '#CFA365',
-                        fontSize: '0.8rem',
-                        fontFamily: '"JetBrains Mono", monospace',
-                        cursor: 'pointer',
-                        transition: 'background 0.15s, border-color 0.15s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.3rem'
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(207,163,101,0.15)'; e.currentTarget.style.borderColor = 'rgba(207,163,101,0.4)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(207,163,101,0.08)'; e.currentTarget.style.borderColor = 'rgba(207,163,101,0.2)'; }}
-                    >
-                      {copied ? 'Copied! ✓' : (
-                        <>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                          </svg>
-                          Copy
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 11, color: 'rgba(244,239,235,0.4)', marginTop: '0.5rem', lineHeight: 1.4 }}>
-                    Send this 6-digit code to the bot to log in instantly.
-                  </div>
-                </div>
-              )}
 
-              <a
-                href={botSession ? `https://t.me/${botSession.bot_username}` : `https://t.me/AtriumHub_bot`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={handleOpenBot}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
-                  padding: '0.6rem 1.25rem',
-                  background: 'rgba(41,171,226,0.08)',
-                  border: '1px solid rgba(41,171,226,0.2)',
-                  borderRadius: 6, color: '#29ABE2',
-                  fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem',
-                  letterSpacing: '0.04em', textDecoration: 'none',
-                  transition: 'background 0.15s, border-color 0.15s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(41,171,226,0.14)'; e.currentTarget.style.borderColor = 'rgba(41,171,226,0.4)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(41,171,226,0.08)'; e.currentTarget.style.borderColor = 'rgba(41,171,226,0.2)'; }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.289c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.932z"/>
-                </svg>
-                Open Telegram Bot
-              </a>
-              {botSession && (
-                <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 9, color: 'rgba(41,171,226,0.5)', marginTop: '0.5rem', letterSpacing: '0.06em' }}>
-                  <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#29ABE2', marginRight: 5, animation: 'pulse-border 1.5s ease-in-out infinite' }} />
-                  Waiting for code confirmation...
+              {botSession && botSession.otp ? (
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', paddingLeft: '1.75rem' }}>
+                  <div style={{
+                    display: 'inline-flex',
+                    gap: '0.5rem',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: '0.5rem 1rem',
+                    background: 'rgba(244,239,235,0.03)',
+                    border: '1px solid rgba(244,239,235,0.08)',
+                    borderRadius: 6,
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontSize: '1.15rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.15em',
+                    color: '#CFA365',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)',
+                    textIndent: '0.1em'
+                  }}>
+                    {botSession.otp}
+                  </div>
+                  <button
+                    onClick={() => handleCopyOtp(botSession.otp)}
+                    style={{
+                      padding: '0.55rem 0.75rem',
+                      background: 'rgba(207,163,101,0.08)',
+                      border: '1px solid rgba(207,163,101,0.2)',
+                      borderRadius: 6,
+                      color: '#CFA365',
+                      fontSize: '0.75rem',
+                      fontFamily: '"JetBrains Mono", monospace',
+                      cursor: 'pointer',
+                      transition: 'background 0.15s, border-color 0.15s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem'
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(207,163,101,0.15)'; e.currentTarget.style.borderColor = 'rgba(207,163,101,0.4)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(207,163,101,0.08)'; e.currentTarget.style.borderColor = 'rgba(207,163,101,0.2)'; }}
+                  >
+                    {copied ? 'Copied! ✓' : (
+                      <>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        Copy
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ paddingLeft: '1.75rem', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', color: 'rgba(244,239,235,0.3)' }}>
+                  Generating code...
                 </div>
               )}
             </div>
+
+            {/* Step 2: Open and Verify */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderTop: '1px solid rgba(207,163,101,0.08)', paddingTop: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '20px', height: '20px', borderRadius: '50%',
+                  background: 'rgba(41,171,226,0.15)', color: '#29ABE2',
+                  fontSize: '0.7rem', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace'
+                }}>2</span>
+                <span style={{ fontFamily: '"Inter", sans-serif', fontSize: '0.8125rem', fontWeight: 600, color: '#F0EDE8' }}>
+                  Verify in Telegram
+                </span>
+              </div>
+
+              <div style={{ paddingLeft: '1.75rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', alignItems: 'flex-start' }}>
+                <a
+                  href={botSession ? `https://t.me/${botSession.bot_username}` : `https://t.me/AtriumHub_bot`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={handleOpenBot}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                    padding: '0.55rem 1rem',
+                    background: 'rgba(41,171,226,0.08)',
+                    border: '1px solid rgba(41,171,226,0.2)',
+                    borderRadius: 6, color: '#29ABE2',
+                    fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.04em', textDecoration: 'none',
+                    transition: 'background 0.15s, border-color 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(41,171,226,0.14)'; e.currentTarget.style.borderColor = 'rgba(41,171,226,0.4)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(41,171,226,0.08)'; e.currentTarget.style.borderColor = 'rgba(41,171,226,0.2)'; }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.289c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.932z"/>
+                  </svg>
+                  Open Telegram Bot
+                </a>
+                <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 11, color: 'rgba(244,239,235,0.45)', lineHeight: 1.4, maxWidth: '280px' }}>
+                  Just press <strong>Open Telegram Bot</strong> and paste the copied code into the chat.
+                </div>
+              </div>
+            </div>
+
+            {botSession && (
+              <div style={{
+                fontFamily: '"JetBrains Mono", monospace', fontSize: 9,
+                color: 'rgba(41,171,226,0.5)', letterSpacing: '0.06em',
+                paddingTop: '0.75rem', borderTop: '1px dashed rgba(207,163,101,0.08)',
+                display: 'flex', alignItems: 'center'
+              }}>
+                <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#29ABE2', marginRight: 8, animation: 'pulse-border 1.5s ease-in-out infinite' }} />
+                Waiting for code confirmation...
+              </div>
+            )}
           </div>
         </div>
 
