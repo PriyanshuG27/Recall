@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atrium — Terms of Service</title>
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-void: #08070A;
+      --bg-surface: #110F14;
+      --text-signal: #F4EFEB;
+      --text-muted: #8E8985;
+      --accent-gold: #CFA365;
+      --border-color: rgba(244, 239, 235, 0.06);
+      --font-display: 'Outfit', system-ui, sans-serif;
+      --font-body: 'Inter', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-void);
+      color: var(--text-signal);
+      font-family: var(--font-body);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 3rem 2rem;
+      box-shadow: 0 12px 48px 0 rgba(0, 0, 0, 0.6);
+      position: relative;
+    }
+
+    /* Ambient Gold Glow */
+    .container::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 10%;
+      right: 10%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent-gold), transparent);
+      opacity: 0.5;
+    }
+
+    header {
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1.5rem;
+    }
+
+    .brand-logo {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      color: var(--accent-gold);
+      text-decoration: none;
+      letter-spacing: 0.05em;
+      display: inline-block;
+      margin-bottom: 1rem;
+      transition: opacity 0.2s;
+    }
+
+    .brand-logo:hover {
+      opacity: 0.8;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: 2.25rem;
+      font-weight: 600;
+      color: var(--text-signal);
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    .last-updated {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    h2 {
+      font-family: var(--font-display);
+      font-size: 1.4rem;
+      font-weight: 500;
+      color: var(--accent-gold);
+      margin-top: 2rem;
+      margin-bottom: 1rem;
+      border-left: 2px solid var(--accent-gold);
+      padding-left: 0.75rem;
+    }
+
+    p {
+      color: var(--text-signal);
+      margin-bottom: 1.25rem;
+      font-size: 0.95rem;
+      opacity: 0.9;
+    }
+
+    ul, ol {
+      margin-bottom: 1.5rem;
+      padding-left: 1.5rem;
+    }
+
+    li {
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+      color: var(--text-signal);
+      opacity: 0.9;
+    }
+
+    strong {
+      color: var(--text-signal);
+      font-weight: 600;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      background: rgba(244, 239, 235, 0.05);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 0.1rem 0.3rem;
+      color: var(--accent-gold);
+    }
+
+    footer {
+      margin-top: 3rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 1.5rem;
+      text-align: center;
+    }
+
+    .back-home {
+      display: inline-flex;
+      align-items: center;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-family: var(--font-mono);
+      transition: color 0.2s;
+    }
+
+    .back-home:hover {
+      color: var(--accent-gold);
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 1rem 0.5rem;
+      }
+      .container {
+        padding: 2rem 1.25rem;
+      }
+      h1 {
+        font-size: 1.75rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <a href="/" class="brand-logo">▲ ATRIUM</a>
+      <h1>Terms of Service</h1>
+      <div class="last-updated">LAST UPDATED: JULY 11, 2026</div>
+    </header>
+
+    <main>
+      <p>Welcome to Atrium. By using the Atrium companion Web Application, Telegram Bot, or Browser Extension (collectively, the "Platform" or "Service"), you agree to be bound by these Terms of Service. If you do not agree to these terms, do not access or use our Service.</p>
+
+      <h2>1. Intellectual Property & Content Ownership</h2>
+      <ul>
+        <li><strong>Your Ownership</strong>: You retain all copyrights, intellectual property rights, and ownership over the raw text, documents, files, and links you submit to the Platform.</li>
+        <li><strong>License Grant</strong>: You grant Atrium a secure, narrow, non-exclusive license solely to decrypt, store, process, summarize, and display your saved content to generate your interactive mind map and facilitate cognitive review features. We do not sell or monetize your data.</li>
+      </ul>
+
+      <h2>2. Age Restrictions & COPPA Alignment</h2>
+      <p>Atrium is designed and marketed exclusively as an advanced organization, indexing, and study tool for adult learners and university-level students. **You must be at least 18 years of age (or 16 years of age inside select jurisdictions) to register an account.** Atrium does not knowingly collect or target information from children under 13, and any account found violating this age threshold will be deleted immediately.</p>
+
+      <h2>3. Downstream AI Disclaimer & Limitations</h2>
+      <p>Atrium leverages advanced Large Language Models (LLMs) to automatically generate notes, tags, summaries, and spaced-repetition quizzes. You acknowledge that:</p>
+      <ul>
+        <li>AI outputs can contain structural errors, semantic discrepancies, or factual "hallucinations."</li>
+        <li>Atrium makes no guarantees regarding the accuracy or reliability of AI-generated content.</li>
+        <li>You are solely responsible for verifying the summaries and insights provided, and Atrium holds no liability for actions taken in reliance on AI-generated summaries.</li>
+      </ul>
+
+      <h2>4. Prohibited Use & System Abuse</h2>
+      <p>We reserve the right to immediately suspend or terminate your account if you are found attempting to:</p>
+      <ul>
+        <li>Prompt-inject, jailbreak, or reverse-engineer our downstream AI ingestion pipelines.</li>
+        <li>Circulate, upload, or index illegal, abusive, or copyright-infringing content on the Platform.</li>
+        <li>Bypass API rate limiters, perform distributed denial-of-service (DDoS) requests, or run automation scripts to spam our endpoints.</li>
+      </ul>
+
+      <h2>5. Disclaimer of Warranties & Free-Tier Limitations</h2>
+      <p>Atrium is provided on an "AS IS" and "AS AVAILABLE" basis. Because Atrium operates entirely on free-tier database and server environments, **we make no warranties regarding service uptime, database durability, or data retention.** Your files are stored under a **1 GB ephemeral disk constraint** and database host allocations may fluctuate. We are not liable for any lost files, corrupted mind maps, or sync failures.</p>
+
+      <h2>6. Territorial Exclusion & Governing Law</h2>
+      <p>Atrium is operated as a regional indie research project. **Atrium does not target, monitor, or authorize usage by residents of the European Union (EU) or European Economic Area (EEA).** Any disputes arising under these Terms shall be governed by the local laws of the jurisdiction in which the developer resides, without regard to conflict of law principles.</p>
+    </main>
+
+    <footer>
+      <a href="/" class="back-home">← Back to Atrium</a>
+    </footer>
+  </div>
+
+</body>
+</html>

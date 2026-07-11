@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atrium — Privacy Policy</title>
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-void: #08070A;
+      --bg-surface: #110F14;
+      --text-signal: #F4EFEB;
+      --text-muted: #8E8985;
+      --accent-gold: #CFA365;
+      --border-color: rgba(244, 239, 235, 0.06);
+      --font-display: 'Outfit', system-ui, sans-serif;
+      --font-body: 'Inter', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-void);
+      color: var(--text-signal);
+      font-family: var(--font-body);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 3rem 2rem;
+      box-shadow: 0 12px 48px 0 rgba(0, 0, 0, 0.6);
+      position: relative;
+    }
+
+    /* Ambient Gold Glow */
+    .container::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 10%;
+      right: 10%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent-gold), transparent);
+      opacity: 0.5;
+    }
+
+    header {
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1.5rem;
+    }
+
+    .brand-logo {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      color: var(--accent-gold);
+      text-decoration: none;
+      letter-spacing: 0.05em;
+      display: inline-block;
+      margin-bottom: 1rem;
+      transition: opacity 0.2s;
+    }
+
+    .brand-logo:hover {
+      opacity: 0.8;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: 2.25rem;
+      font-weight: 600;
+      color: var(--text-signal);
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    .last-updated {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    h2 {
+      font-family: var(--font-display);
+      font-size: 1.4rem;
+      font-weight: 500;
+      color: var(--accent-gold);
+      margin-top: 2rem;
+      margin-bottom: 1rem;
+      border-left: 2px solid var(--accent-gold);
+      padding-left: 0.75rem;
+    }
+
+    p {
+      color: var(--text-signal);
+      margin-bottom: 1.25rem;
+      font-size: 0.95rem;
+      opacity: 0.9;
+    }
+
+    ul, ol {
+      margin-bottom: 1.5rem;
+      padding-left: 1.5rem;
+    }
+
+    li {
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+      color: var(--text-signal);
+      opacity: 0.9;
+    }
+
+    strong {
+      color: var(--text-signal);
+      font-weight: 600;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      background: rgba(244, 239, 235, 0.05);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 0.1rem 0.3rem;
+      color: var(--accent-gold);
+    }
+
+    .alert-box {
+      background: rgba(207, 163, 101, 0.04);
+      border: 1px dashed rgba(207, 163, 101, 0.2);
+      border-radius: 6px;
+      padding: 1.25rem;
+      margin: 1.5rem 0;
+    }
+
+    .alert-box h3 {
+      font-family: var(--font-display);
+      font-size: 1rem;
+      color: var(--accent-gold);
+      margin-bottom: 0.5rem;
+    }
+
+    .alert-box p {
+      margin-bottom: 0;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    footer {
+      margin-top: 3rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 1.5rem;
+      text-align: center;
+    }
+
+    .back-home {
+      display: inline-flex;
+      align-items: center;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-family: var(--font-mono);
+      transition: color 0.2s;
+    }
+
+    .back-home:hover {
+      color: var(--accent-gold);
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 1rem 0.5rem;
+      }
+      .container {
+        padding: 2rem 1.25rem;
+      }
+      h1 {
+        font-size: 1.75rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <a href="/" class="brand-logo">▲ ATRIUM</a>
+      <h1>Privacy Policy</h1>
+      <div class="last-updated">LAST UPDATED: JULY 11, 2026</div>
+    </header>
+
+    <main>
+      <p>Atrium (the "Platform," "we," "us," or "our") values your privacy. This Privacy Policy details how we collect, use, encrypt, store, and process your data when you interact with the Atrium Telegram Bot, Chrome Extension, and Companion Web Application.</p>
+
+      <h2>1. Information We Collect & Ingest</h2>
+      <p>We only collect data that you explicitly submit or configure to sync with Atrium:</p>
+      <ul>
+        <li><strong>Media and Files</strong>: Images (screenshots, graphs, photos), voice notes (audio clips, memos), and document files (PDFs) uploaded to our Telegram Bot or Web App for text extraction, metadata parsing, and indexing.</li>
+        <li><strong>Web Content</strong>: Tab URLs, page titles, and body texts clipped and submitted by you using the Atrium browser extension.</li>
+        <li><strong>Credentials</strong>: Google Drive OAuth refresh tokens, which are encrypted immediately and used strictly to back up your notes to your Google Drive account.</li>
+        <li><strong>Temporary Timezone Location</strong>: When configuring your profile, you may optionally send a geolocation pin. This coordinates payload is processed **ephemerally** to auto-detect your timezone offset and is **never stored permanently** in our database.</li>
+      </ul>
+
+      <h2>2. Cryptographic Security & Data Storage</h2>
+      <p>Atrium implements a zero-trust storage posture to defend your personal content:</p>
+      <ul>
+        <li><strong>At-Rest Encryption</strong>: Raw text content extracted from voice transcripts, documents, or clipped web pages, along with Google OAuth refresh tokens, are encrypted at rest using standard **AES symmetric cryptography with 256-bit keys (via Fernet keys)** before database persistence.</li>
+        <li><strong>Database Isolation</strong>: Our database host (Neon PostgreSQL) and caching layer (Upstash Redis) see only ciphertext strings and key-hashes, insulating your data in the event of an infrastructure breach.</li>
+        <li><strong>In-Transit Security</strong>: All network traffic between your browser, browser extension, Telegram Webhook, and backend servers is encrypted using Secure Sockets Layer/Transport Layer Security (HTTPS/TLS).</li>
+      </ul>
+
+      <h2>3. Downstream AI Processing & Sub-Processors</h2>
+      <p>To summarize, tag, and generate vector embeddings for your saved content, Atrium routes plaintext inputs to third-party AI interfaces. These third-party processors include:
+        <code>Google Gemini API</code>, <code>Groq API</code>, and <code>Modal Labs</code> (for voice transcription).
+      </p>
+
+      <div class="alert-box">
+        <h3>⚠️ AI Training & Free-Tier Disclosure</h3>
+        <p>Atrium operates on a free-tier infrastructure configuration. Under the free tier of the Google AI Studio developer terms, Google reserves the right to retain, inspect, and use prompts and generated content to train and improve Google products. Human reviewers may read your prompts. If you ingest highly sensitive, proprietary, or regulated personal data, we strongly recommend requesting a paid API key configuration (where training is completely disabled) or limiting the sensitivity of content uploaded to the Platform.</p>
+      </div>
+
+      <h2>4. Data Portability & Cascading Deletion</h2>
+      <p>You retain full sovereignty and ownership over your data:</p>
+      <ul>
+        <li><strong>Account Deletion</strong>: You can permanently purge your account and delete all associated records cascadingly (including your user profile, saved items, quizzes, and connections) via the Web UI dashboard settings (which triggers a <code>DELETE /api/me</code> request).</li>
+        <li><strong>Data Portability</strong>: You can export all saved items, tags, and AI summaries as a structured JSON file (<code>GET /api/export</code>) or as a structured, Markdown-configured zipped Obsidian Vault (<code>GET /api/export/zip</code>) directly from your dashboard settings.</li>
+      </ul>
+
+      <h2>5. Territorial Scope & GDPR Exclusion</h2>
+      <p>Atrium is an indie project designed and developed as a regional research and personal organization tool. **Atrium is not intended for, does not target, and does not authorize usage by residents of the European Union (EU) or European Economic Area (EEA).** We do not intentionally offer services to or monitor the behavior of EU citizens under GDPR definitions.</p>
+    </main>
+
+    <footer>
+      <a href="/" class="back-home">← Back to Atrium</a>
+    </footer>
+  </div>
+
+</body>
+</html>
