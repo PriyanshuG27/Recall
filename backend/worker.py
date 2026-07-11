@@ -756,6 +756,9 @@ async def process_batch_task(task: Dict[str, Any], user_id: int, chat_id: str) -
         
     saved_nodes = []
     async with db_conn._pool.connection() as conn:
+        # Force a fresh read snapshot by committing any implicit open transaction
+        # before the SELECT so all just-committed items are visible.
+        await conn.commit()
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -1068,6 +1071,7 @@ async def process_batch_task(task: Dict[str, Any], user_id: int, chat_id: str) -
                     await redis.setex(f"message_to_item:{chat_id}:{user_msg_id}", 604800, str(save["id"]))
             except Exception as r_err:
                 logger.error("Failed to cache message_to_item mapping: %s", r_err)
+        await asyncio.sleep(1.0)
 
     # Dynamic Context Note Why Question (Prompt only once for the most relevant save in batch)
     if final_saves:
@@ -1118,7 +1122,8 @@ async def process_single_item(task: Dict[str, Any], user_id: int, chat_id: str, 
                         pass
                 if text_notes:
                     user_context = "; ".join(text_notes)
-                    logger.info("Found user context for message_id=%d: %s", user_msg_id, user_context)
+                    from backend.services.pii_masker import mask_pii
+                    logger.info("Found user context for message_id=%d: %s", user_msg_id, mask_pii(user_context))
         except Exception as r_err:
             logger.error("Failed to read deferred replies for user context: %s", r_err)
 
@@ -1338,6 +1343,8 @@ async def process_single_item(task: Dict[str, Any], user_id: int, chat_id: str, 
         rows_map = {}
         try:
             async with db_conn._pool.connection() as conn:
+                # Force fresh snapshot so recently-committed items are visible
+                await conn.commit()
                 await conn.execute("SET statement_timeout = '30s'")
                 async with conn.cursor() as cur:
                     await cur.execute(

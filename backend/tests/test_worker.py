@@ -71,7 +71,7 @@ class MockPool:
     def __init__(self):
         self.conn = MockConnection()
         
-    def connection(self):
+    def connection(self, **kwargs):
         return self.conn
 
 
