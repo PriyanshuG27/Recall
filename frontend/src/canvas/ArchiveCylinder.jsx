@@ -67,6 +67,9 @@ function CylinderScene({ items, matchingIds, onCardClick, hasSelection, selected
     let touchStart = 0;
 
     const onWheel = (e) => {
+      if (e.target.closest('.node-panel')) {
+        return;
+      }
       e.preventDefault();
       // Increase/decrease target scroll progress, bounding it strictly within the items list
       targetScrollProgress.current += e.deltaY * 0.004;
@@ -84,8 +87,8 @@ function CylinderScene({ items, matchingIds, onCardClick, hasSelection, selected
     };
 
     const handleTouchStart = (e) => {
-      // If the touch started inside the bottom sheet HUD, don't rotate the 3D cylinder
-      if (e.target.closest('.archive-hud') || e.target.closest('input') || e.target.closest('button')) {
+      // If the touch started inside the bottom sheet HUD or node details panel, don't rotate the 3D cylinder
+      if (e.target.closest('.archive-hud') || e.target.closest('.node-panel') || e.target.closest('input') || e.target.closest('button')) {
         return;
       }
       if (e.touches.length === 1) {
@@ -94,7 +97,7 @@ function CylinderScene({ items, matchingIds, onCardClick, hasSelection, selected
     };
 
     const handleTouchMove = (e) => {
-      if (e.target.closest('.archive-hud') || e.target.closest('input') || e.target.closest('button')) {
+      if (e.target.closest('.archive-hud') || e.target.closest('.node-panel') || e.target.closest('input') || e.target.closest('button')) {
         return;
       }
       if (e.touches.length === 1 && touchStart !== 0) {

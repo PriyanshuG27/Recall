@@ -304,6 +304,14 @@ async def extension_download():
     from fastapi import HTTPException
 
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assets_zip = os.path.join(base_dir, "backend", "assets", "atrium_extension.zip")
+    if os.path.exists(assets_zip):
+        return FileResponse(
+            assets_zip,
+            media_type="application/zip",
+            filename="atrium_extension.zip"
+        )
+
     ext_path = os.path.join(base_dir, "frontend", "extension")
     if not os.path.exists(ext_path):
         ext_path = os.path.abspath("frontend/extension")

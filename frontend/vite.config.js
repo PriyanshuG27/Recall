@@ -37,6 +37,7 @@ export default defineConfig({
         }
       },
       workbox: {
+        navigateFallbackDenylist: [/^\/api/, /^\/auth/],
         runtimeCaching: [
           {
             urlPattern: /\/api\/graph/,
