@@ -1336,41 +1336,45 @@ async def process_single_item(task: Dict[str, Any], user_id: int, chat_id: str, 
         primary_id = item_ids[0] if item_ids else None
         
         for saved_id in item_ids:
-            async with db_conn._pool.connection() as conn:
-                await conn.execute("SET statement_timeout = '30s'")
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        "SELECT source_type, title, summary, tags, source_url FROM items WHERE id = %s AND user_id = %s;", 
-                        (saved_id, user_id)
-                    )
-                    row = await cur.fetchone()
-            if row:
-                i_type = row[0]
-                i_title = row[1] or ""
-                i_summary = row[2] or ""
-                i_tags = row[3] if row[3] else []
-                i_url = row[4] or ""
-                
-                if not is_batch_item:
-                    if i_type == "image":
-                        prefix = "🖼 Image"
-                        title_to_use = i_title or "Image Note"
-                    elif i_type == "url":
-                        is_youtube = "youtube.com" in i_url.lower() or "youtu.be" in i_url.lower()
-                        is_instagram = "instagram.com" in i_url.lower() or "instagr.am" in i_url.lower()
-                        if is_youtube:
-                            prefix = "🎥"
-                        elif is_instagram:
-                            prefix = "📸"
+            try:
+                async with db_conn._pool.connection() as conn:
+                    await conn.execute("SET statement_timeout = '30s'")
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            "SELECT source_type, title, summary, tags, source_url FROM items WHERE id = %s AND user_id = %s;", 
+                            (saved_id, user_id)
+                        )
+                        row = await cur.fetchone()
+                if row:
+                    i_type = row[0]
+                    i_title = row[1] or ""
+                    i_summary = row[2] or ""
+                    i_tags = row[3] if row[3] else []
+                    i_url = row[4] or ""
+                    
+                    if not is_batch_item:
+                        if i_type == "image":
+                            prefix = "🖼 Image"
+                            title_to_use = i_title or "Image Note"
+                        elif i_type == "url":
+                            is_youtube = "youtube.com" in i_url.lower() or "youtu.be" in i_url.lower()
+                            is_instagram = "instagram.com" in i_url.lower() or "instagr.am" in i_url.lower()
+                            if is_youtube:
+                                prefix = "🎥"
+                            elif is_instagram:
+                                prefix = "📸"
+                            else:
+                                prefix = "🔗"
+                            title_to_use = i_title or "URL Link"
                         else:
-                            prefix = "🔗"
-                        title_to_use = i_title or "URL Link"
-                    else:
-                        prefix = "📝"
-                        title_to_use = i_title or "Item"
-                        
-                    bot_reply = _build_success_message(f"{prefix} {title_to_use}", i_summary, i_tags)
-                    await send_telegram_message(chat_id, bot_reply, reply_markup=build_recall_keyboard(saved_id))
+                            prefix = "📝"
+                            title_to_use = i_title or "Item"
+                            
+                        bot_reply = _build_success_message(f"{prefix} {title_to_use}", i_summary, i_tags)
+                        await send_telegram_message(chat_id, bot_reply, reply_markup=build_recall_keyboard(saved_id))
+                        await asyncio.sleep(1.0) # Rate limit protection between multiple notifications
+            except Exception as loop_err:
+                logger.error("Error processing success notification for item %s: %s", saved_id, loop_err)
                     
         item_id = primary_id
             
