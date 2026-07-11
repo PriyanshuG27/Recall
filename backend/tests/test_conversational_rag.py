@@ -28,6 +28,14 @@ def patch_env(monkeypatch):
         monkeypatch.setenv(k, v)
 
 
+@pytest.fixture(autouse=True)
+def mock_redis():
+    mock_r = mock.AsyncMock()
+    mock_r.get.return_value = None
+    mock_r.pipeline.return_value = [None, "OK"]
+    with mock.patch("backend.routes.webhook.redis", mock_r):
+        yield mock_r
+
 # --- DB Mocking ---
 
 class RecordingCursor:
@@ -158,6 +166,7 @@ def test_webhook_normal_message_queued(client, override_db):
          mock.patch("backend.routes.webhook.redis.get", return_value=None), \
          mock.patch("backend.routes.webhook.redis.rpush", return_value=1), \
          mock.patch("backend.routes.webhook.redis.setex", return_value=None), \
+         mock.patch("backend.routes.webhook.redis.pipeline", new_callable=mock.AsyncMock, return_value=[1, "OK"]), \
          mock.patch("backend.routes.webhook.run_upstash_command", return_value={}), \
          mock.patch("backend.routes.webhook.send_telegram_ack") as mock_ack, \
          mock.patch("backend.routes.webhook.check_rate_limit", return_value=None):
