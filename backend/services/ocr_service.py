@@ -201,7 +201,16 @@ async def perform_gemini_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
     b64_image = base64.b64encode(processed_bytes).decode("utf-8")
     mime_type = "image/jpeg"
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
+    from backend.services.ai_cascade.config import settings as cascade_settings
+    try:
+        provider_cfg = cascade_settings.get_provider_config("gemini")
+        cfg_models = provider_cfg.get("models", {})
+        models = [m for m, meta in cfg_models.items() if meta.get("status") == "active"]
+        target_model = models[0] if models else "gemini-3.1-flash-lite"
+    except Exception:
+        target_model = "gemini-3.1-flash-lite"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={clean_key}"
     payload = {
         "contents": [
             {
@@ -222,7 +231,7 @@ async def perform_gemini_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
                 if candidates and candidates[0].get("content") and candidates[0]["content"].get("parts"):
                     text_response = candidates[0]["content"]["parts"][0].get("text")
                     if text_response:
-                        logger.info("Direct Gemini OCR succeeded using model: gemini-1.5-flash")
+                        logger.info("Direct Gemini OCR succeeded using model: %s", target_model)
                         return text_response.strip()
             logger.warning("Direct Gemini OCR failed with status %d: %s", resp.status_code, resp.text)
     except Exception as e:
@@ -310,7 +319,7 @@ async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
         
         try:
             # Lower timeout per model so fallback transitions quickly
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()

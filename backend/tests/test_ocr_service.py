@@ -73,7 +73,9 @@ async def test_perform_ocr_low_confidence_fallback():
     
     with patch("backend.services.ocr_service.check_paddleocr_available", return_value=True), \
          patch("backend.services.ocr_service.get_paddle_client", return_value=mock_ocr), \
-         patch("cv2.QRCodeDetector.detectAndDecode", return_value=("", None, None)):
+         patch("cv2.QRCodeDetector.detectAndDecode", return_value=("", None, None)), \
+         patch("backend.services.ocr_service.perform_gemini_ocr", return_value=""), \
+         patch("backend.services.ocr_service.perform_nvidia_ocr", return_value=""):
          
         text = await perform_ocr(img_bytes)
         # Should return "" because trigger_gemini_fallback = True
@@ -99,6 +101,8 @@ async def test_perform_ocr_qr_code_detected():
     with patch("backend.services.ocr_service.check_paddleocr_available", return_value=True), \
          patch("backend.services.ocr_service.get_paddle_client", return_value=mock_ocr), \
          patch("cv2.QRCodeDetector.detectAndDecode", return_value=("https://example.com/qr", None, None)), \
+         patch("backend.services.ocr_service.perform_gemini_ocr", return_value=""), \
+         patch("backend.services.ocr_service.perform_nvidia_ocr", return_value=""), \
          patch("backend.services.ocr_service._get_ocr_executor", return_value=ThreadPoolExecutor(max_workers=1)):
          
         text = await perform_ocr(img_bytes)
