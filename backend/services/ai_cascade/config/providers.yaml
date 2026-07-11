@@ -32,7 +32,7 @@ providers:
     circuit_threshold: 3
     health_check_interval: 30
     models:
-      qwen/qwen3-next-80b-a3b:
+      qwen/qwen3-next-80b-a3b-instruct:
         status: active
         replacement: deepseek/deepseek-v4-pro
       deepseek/deepseek-v4-pro:

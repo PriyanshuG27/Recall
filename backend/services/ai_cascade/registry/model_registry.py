@@ -116,7 +116,7 @@ DEFAULT_MODELS = [
     ),
     # Nvidia NIM
     ModelMetadata(
-        model_id="qwen/qwen3-next-80b-a3b",
+        model_id="qwen/qwen3-next-80b-a3b-instruct",
         provider_name="nvidia",
         capabilities={ModelCapability.TEXT_GENERATION},
         context_window=16384,
