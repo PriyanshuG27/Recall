@@ -72,7 +72,7 @@ class Settings(BaseSettings):
 
     # Provider settings
     EMBEDDING_PROVIDER: str = "local"  # "local" or "remote"
-    OCR_PROVIDER: str = "local"  # "local" or "remote"
+    OCR_PROVIDER: str = "nvidia"  # "local", "remote", "nvidia", or "gemini"
     SENTENCE_SPLITTER: str = "spacy"  # "spacy", "regex", or "remote"
     REMOTE_AI_URL: str = "http://127.0.0.1:8001"
     REMOTE_EMBED_URL: str | None = None

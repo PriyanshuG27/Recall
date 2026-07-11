@@ -6,6 +6,11 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 from backend.services.ocr_service import check_paddleocr_available, perform_ocr, preprocess_and_ocr_image
 
+@pytest.fixture(autouse=True)
+def setup_ocr_provider(monkeypatch):
+    from backend.config import settings
+    monkeypatch.setattr(settings, "OCR_PROVIDER", "local")
+
 # 1. Test check_paddleocr_available
 def test_check_paddleocr_available():
     with patch("importlib.util.find_spec") as mock_find:
