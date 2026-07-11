@@ -158,7 +158,7 @@ async def ingest_image(file_id: str, user_id: int, chat_id: str, db: AsyncConnec
         try:
             from backend.services.ocr_service import perform_ocr
             ocr_text = await perform_ocr(temp_path)
-            logger.info("PaddleOCR completed. Extracted length: %d chars", len(ocr_text))
+            logger.info("PaddleOCR completed. Extracted length: %d chars. Raw OCR text:\n%s", len(ocr_text), ocr_text)
         except Exception as ocr_err:
             logger.warning("PaddleOCR failed: %s. Falling back to captioning.", ocr_err)
             ocr_text = ""
