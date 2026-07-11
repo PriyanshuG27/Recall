@@ -176,6 +176,60 @@ def preprocess_and_ocr_image(image_bytes: bytes) -> dict:
         
     return {"ocr_text": ocr_result_text, "trigger_gemini_fallback": False}
 
+async def perform_gemini_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
+    """Calls Gemini API directly with raw OCR extraction prompt to bypass captioning cascade."""
+    from PIL import Image
+    from io import BytesIO
+    import base64
+    import httpx
+    
+    clean_key = api_key.strip().replace('"', '').replace("'", "")
+    
+    # Compress and resize image to avoid payload size limits
+    try:
+        img = Image.open(BytesIO(image_bytes))
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.thumbnail((1024, 1024))
+        out_buf = BytesIO()
+        img.save(out_buf, format="JPEG", quality=80)
+        processed_bytes = out_buf.getvalue()
+    except Exception as compress_err:
+        logger.warning("Failed to compress image for Gemini OCR: %s", compress_err)
+        processed_bytes = image_bytes
+
+    b64_image = base64.b64encode(processed_bytes).decode("utf-8")
+    mime_type = "image/jpeg"
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"inlineData": {"mimeType": mime_type, "data": b64_image}},
+                    {"text": "Extract all readable text, characters, URLs, and links from this image verbatim. Do not explain, describe, or summarize the image. Output only the raw extracted text."}
+                ]
+            }
+        ]
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                candidates = data.get("candidates")
+                if candidates and candidates[0].get("content") and candidates[0]["content"].get("parts"):
+                    text_response = candidates[0]["content"]["parts"][0].get("text")
+                    if text_response:
+                        logger.info("Direct Gemini OCR succeeded using model: gemini-1.5-flash")
+                        return text_response.strip()
+            logger.warning("Direct Gemini OCR failed with status %d: %s", resp.status_code, resp.text)
+    except Exception as e:
+        logger.error("Error calling Direct Gemini OCR: %s", e)
+        
+    return None
+
 async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
     """Calls NVIDIA NIM vision models in cascade order (11b-vision -> 90b-vision -> nemotron-nano-vl)."""
     from PIL import Image
@@ -230,7 +284,7 @@ async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
     if not models:
         models = [
             "nvidia/nemotron-nano-12b-v2-vl",
-            "nvidia/cosmos3-nano-reasoner"
+            "nvidia/llama-3.2-11b-vision-instruct"
         ]
     
     for model_name in models:
@@ -304,14 +358,16 @@ async def perform_ocr(img_or_path_or_bytes: Union[Image.Image, str, bytes]) -> s
     # Direct routes
     if provider == "gemini":
         logger.info("OCR provider set to Gemini. Routing directly...")
-        try:
-            from backend.services.ai_cascade.facade import AICascade
-            cascade = AICascade()
-            ocr_text = await cascade.caption_image(image_bytes)
-            return ocr_text or ""
-        except Exception as e:
-            logger.error("Direct Gemini OCR failed: %s", e)
-            return ""
+        if settings.GEMINI_API_KEY:
+            try:
+                ocr_text = await perform_gemini_ocr(image_bytes, settings.GEMINI_API_KEY)
+                if ocr_text:
+                    return ocr_text
+            except Exception as e:
+                logger.error("Direct Gemini OCR failed: %s", e)
+        else:
+            logger.warning("Gemini OCR provider selected, but GEMINI_API_KEY is missing.")
+        return ""
 
     elif provider == "nvidia":
         logger.info("OCR provider set to NVIDIA. Routing directly...")
@@ -362,6 +418,18 @@ async def perform_ocr(img_or_path_or_bytes: Union[Image.Image, str, bytes]) -> s
                 ocr_text = nvidia_text
         except Exception as e:
             logger.warning("NVIDIA NIM OCR fallback failed: %s", e)
+
+    # Fallback C: Try Gemini OCR if other options returned low-content or failed
+    word_count = len(ocr_text.split())
+    if (not ocr_text or word_count < 10) and settings.GEMINI_API_KEY:
+        logger.info("PaddleOCR/NVIDIA returned low-content text (%d words). Triggering Gemini OCR fallback...", word_count)
+        try:
+            gemini_text = await perform_gemini_ocr(image_bytes, settings.GEMINI_API_KEY)
+            if gemini_text:
+                logger.info("Gemini OCR fallback succeeded.")
+                ocr_text = gemini_text
+        except Exception as e:
+            logger.warning("Gemini OCR fallback failed: %s", e)
 
     return ocr_text
 
