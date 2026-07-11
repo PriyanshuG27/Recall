@@ -1453,6 +1453,10 @@ body::after {
   display: none;
 }
 
+.mobile-top-header {
+  display: none !important;
+}
+
 .mobile-only-controls {
   display: none !important;
 }
