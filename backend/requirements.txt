@@ -17,6 +17,7 @@ Jinja2==3.1.5
 psycopg==3.3.4
 psycopg-binary==3.3.4
 psycopg-pool==3.3.1
+redis==5.2.1
 
 # Security & Encryption
 cryptography==49.0.0
@@ -29,6 +30,7 @@ httpx==0.28.1
 APScheduler==3.11.2
 networkx==3.6.1
 python-louvain==0.16
+numpy>=2.1.0
 
 # Media & Document Ingestion
 beautifulsoup4==4.15.0

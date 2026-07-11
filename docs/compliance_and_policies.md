@@ -19,7 +19,7 @@ Atrium treats your personal content with zero-trust storage principles:
 
 ### 1.3 Downstream AI Processing
 To generate vector embeddings, tag networks, and summarizations, we route your processed text to external AI services:
-*   **AI Providers**: Google Gemini API, Groq, and Modal serverless GPU models.
+*   **AI Providers**: Google Gemini API, Groq API, and NVIDIA NIM.
 *   **Training Disclosures**: Atrium operates on the Google AI Studio Free Tier. Under these terms, Google collects, retains, and utilizes prompts and transcripts to train Google models. Users must not ingest highly sensitive, proprietary, or regulated personal data on the Platform. We do not sell or lease your raw data to any advertising platforms.
 
 ### 1.4 Data Deletion & Portability (GDPR / CCPA)

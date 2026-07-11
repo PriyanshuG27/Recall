@@ -366,7 +366,7 @@ import time
 async def hybrid_search(
     query: str,
     user_id: int,
-    db: AsyncConnection,
+    db: Optional[AsyncConnection] = None,
     source_types: Optional[List[str]] = None,
     tags: Optional[List[str]] = None,
     start_date: Optional[datetime] = None,
@@ -536,26 +536,28 @@ async def hybrid_search(
     query_params.extend([user_id, db_limit])
 
     t_db_start = time.perf_counter()
-    async with db.cursor() as cur:
-        await cur.execute(consolidated_query, tuple(query_params))
-        rows = await cur.fetchall()
-        t_db = (time.perf_counter() - t_db_start) * 1000
+    from backend.db.connection import get_db_scope
+    async with get_db_scope(db) as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(consolidated_query, tuple(query_params))
+            rows = await cur.fetchall()
+            t_db = (time.perf_counter() - t_db_start) * 1000
 
-        results = []
-        for r in rows:
-            results.append({
-                "id": r[0],
-                "title": r[1],
-                "summary": r[2],
-                "source_type": r[3],
-                "source_url": r[4],
-                "tags": r[5] if r[5] is not None else [],
-                "created_at": r[6],
-                "score": float(r[7]),
-                "raw_text": r[8] if len(r) > 8 else None,
-                "matched_chunk_text": r[9] if len(r) > 9 else None,
-                "chunk_index": r[10] if len(r) > 10 else None,
-            })
+            results = []
+            for r in rows:
+                results.append({
+                    "id": r[0],
+                    "title": r[1],
+                    "summary": r[2],
+                    "source_type": r[3],
+                    "source_url": r[4],
+                    "tags": r[5] if r[5] is not None else [],
+                    "created_at": r[6],
+                    "score": float(r[7]),
+                    "raw_text": r[8] if len(r) > 8 else None,
+                    "matched_chunk_text": r[9] if len(r) > 9 else None,
+                    "chunk_index": r[10] if len(r) > 10 else None,
+                })
 
     # If the database returns 0 candidate matches, skip reranking and return [] immediately
     if not results:
@@ -708,7 +710,7 @@ async def hybrid_search(
     return winners
 
 
-async def rag_semantic_search(query: str, user_id: int, db: AsyncConnection, limit: int = 12) -> List[Dict[str, Any]]:
+async def rag_semantic_search(query: str, user_id: int, db: Optional[AsyncConnection] = None, limit: int = 12) -> List[Dict[str, Any]]:
     """
     Perform a pure semantic search using pgvector (HNSW cosine similarity)
     on the user's items for conversational RAG context.
@@ -725,22 +727,24 @@ async def rag_semantic_search(query: str, user_id: int, db: AsyncConnection, lim
         LIMIT %s;
     """
 
-    async with db.cursor() as cur:
-        await cur.execute(query_str, (query_embedding, user_id, query_embedding, limit))
-        rows = await cur.fetchall()
+    from backend.db.connection import get_db_scope
+    async with get_db_scope(db) as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(query_str, (query_embedding, user_id, query_embedding, limit))
+            rows = await cur.fetchall()
 
-        results = []
-        for r in rows:
-            results.append({
-                "id": r[0],
-                "title": r[1],
-                "summary": r[2],
-                "source_type": r[3],
-                "source_url": r[4],
-                "tags": r[5] if r[5] is not None else [],
-                "created_at": r[6],
-                "similarity": float(r[7]),
-            })
+            results = []
+            for r in rows:
+                results.append({
+                    "id": r[0],
+                    "title": r[1],
+                    "summary": r[2],
+                    "source_type": r[3],
+                    "source_url": r[4],
+                    "tags": r[5] if r[5] is not None else [],
+                    "created_at": r[6],
+                    "similarity": float(r[7]),
+                })
 
     return results
 

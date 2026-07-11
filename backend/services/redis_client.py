@@ -1,15 +1,16 @@
 """
 backend/services/redis_client.py
 ================================
-Asynchronous wrapper for the Upstash Redis REST API.
-Enforces stateless HTTPS connections, 5-second timeouts, retry on 5xx,
-and strict token redaction in logs/exceptions.
+Asynchronous client for Upstash Redis using TCP protocol.
+Provides connection pooling, automatic string decoding, key hashing for privacy,
+and custom error mapping.
 """
 
 import asyncio
 import logging
+import urllib.parse
 from typing import List, Tuple, Optional, Union
-import httpx
+import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)
 
@@ -18,25 +19,44 @@ class RedisUnavailableError(Exception):
     pass
 
 class RedisAuthError(Exception):
-    """Exception raised when Upstash Redis authentication fails (4xx status)."""
+    """Exception raised when Upstash Redis authentication fails."""
     pass
 
 class UpstashRedis:
     def __init__(self):
-        self._client: Optional[httpx.AsyncClient] = None
+        self._pool: Optional[aioredis.ConnectionPool] = None
+        self._client: Optional[aioredis.Redis] = None
 
-    def _get_client(self) -> httpx.AsyncClient:
-        from backend.config import settings
+    def _get_client(self) -> aioredis.Redis:
         if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=settings.UPSTASH_REDIS_REST_URL,
-                headers={"Authorization": f"Bearer {settings.UPSTASH_REDIS_REST_TOKEN}"},
-                timeout=10.0,
+            from backend.config import settings
+            
+            # Determine connection URL
+            redis_url = getattr(settings, "REDIS_URL", None) or getattr(settings, "UPSTASH_REDIS_URL", None)
+            if not redis_url:
+                rest_url = settings.UPSTASH_REDIS_REST_URL or ""
+                token = settings.UPSTASH_REDIS_REST_TOKEN or ""
+                
+                host = rest_url.replace("https://", "").replace("http://", "").split("/")[0].split(":")[0]
+                if not host or host in ("localhost", "127.0.0.1"):
+                    redis_url = "redis://localhost:6379"
+                else:
+                    escaped_token = urllib.parse.quote(token)
+                    redis_url = f"rediss://default:{escaped_token}@{host}:6379"
+            
+            logger.info("Initializing TCP Redis Connection Pool...")
+            self._pool = aioredis.ConnectionPool.from_url(
+                redis_url,
+                max_connections=20,
+                decode_responses=True,
+                socket_timeout=10.0,
+                socket_connect_timeout=5.0
             )
+            self._client = aioredis.Redis(connection_pool=self._pool)
         return self._client
 
     def _redact(self, msg: str) -> str:
-        """Redacts the Upstash Redis REST token from any string message."""
+        """Redacts the Upstash Redis REST token/password from any message."""
         from backend.config import settings
         if settings and settings.UPSTASH_REDIS_REST_TOKEN:
             return msg.replace(settings.UPSTASH_REDIS_REST_TOKEN, "<REDACTED>")
@@ -69,334 +89,233 @@ class UpstashRedis:
                 hashed_parts.append(part)
         return prefix + ":".join(hashed_parts)
 
-    async def _request(self, endpoint: str, json_data, timeout: Optional[float] = None) -> dict | list:
-        # Pre-process json_data to hash keys containing sensitive numeric parts
-        if json_data:
-            if endpoint == "pipeline":
-                if isinstance(json_data, list):
-                    for cmd in json_data:
-                        if isinstance(cmd, list) and len(cmd) > 1:
-                            cmd_name = cmd[0].upper() if isinstance(cmd[0], str) else ""
-                            if cmd_name == "EVAL" and len(cmd) > 2:
-                                try:
-                                    num_keys = int(cmd[2])
-                                    for idx in range(3, min(3 + num_keys, len(cmd))):
-                                        cmd[idx] = self._hash_key(cmd[idx])
-                                except ValueError:
-                                    pass
-                            else:
-                                cmd[1] = self._hash_key(cmd[1])
-                                if len(cmd) > 2 and isinstance(cmd[0], str) and cmd[0].upper() == "BRPOPLPUSH":
-                                    cmd[2] = self._hash_key(cmd[2])
-            else:
-                if isinstance(json_data, list) and len(json_data) > 0:
-                    cmd_name = json_data[0].upper() if isinstance(json_data[0], str) else ""
-                    if cmd_name == "EVAL" and len(json_data) > 2:
-                        try:
-                            num_keys = int(json_data[2])
-                            for idx in range(3, min(3 + num_keys, len(json_data))):
-                                json_data[idx] = self._hash_key(json_data[idx])
-                        except ValueError:
-                            pass
-                    elif len(json_data) > 1:
-                        json_data[1] = self._hash_key(json_data[1])
-                        if len(json_data) > 2 and isinstance(json_data[0], str) and json_data[0].upper() == "BRPOPLPUSH":
-                            json_data[2] = self._hash_key(json_data[2])
-
-        client = self._get_client()
-        import sys
-        from unittest.mock import Mock
-        if "pytest" in sys.modules and not isinstance(client.post, Mock):
-            # If json_data is a list of lists (pipeline)
-            if json_data and isinstance(json_data, list) and isinstance(json_data[0], list):
-                results = []
-                for cmd in json_data:
-                    cmd_name = cmd[0].upper() if cmd and isinstance(cmd[0], str) else ""
-                    if cmd_name == "RPUSH":
-                        results.append({"result": 0})
-                    elif cmd_name == "EXISTS":
-                        results.append({"result": 0})
-                    elif cmd_name == "SREM":
-                        results.append({"result": 0})
-                    elif cmd_name == "SADD":
-                        results.append({"result": 0})
-                    else:
-                        results.append({"result": None})
-                return results
-
-            command = json_data[0].upper() if json_data and isinstance(json_data, list) and isinstance(json_data[0], str) else ""
-            if command == "PING":
-                return {"result": "PONG"}
-            if command == "GET":
-                return {"result": None}
-            if command in ("DEL", "ZADD", "ZREM", "LPUSH", "RPUSH", "LTRIM", "HSET", "HINCRBY", "INCR", "DECR", "LREM", "SADD", "SREM", "EXPIRE"):
-                return {"result": 0}
-            if command in ("ZRANGEBYSCORE", "LRANGE", "HGETALL", "SMEMBERS"):
-                return {"result": []}
-            if command in ("BRPOPLPUSH", "SISMEMBER"):
-                return {"result": None}
-            return {"result": None}
-
-        try:
-            resp = await client.post(endpoint, json=json_data, timeout=timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except httpx.TimeoutException as e:
-            redacted_msg = self._redact(str(e))
-            logger.error("Upstash Redis timeout: %s", redacted_msg)
-            raise RedisUnavailableError(redacted_msg) from e
-        except httpx.HTTPStatusError as e:
-            status_code = e.response.status_code
-            redacted_msg = self._redact(str(e))
-            if 400 <= status_code < 500:
-                logger.error("Upstash Redis auth error (HTTP %d): %s", status_code, redacted_msg)
-                raise RedisAuthError(redacted_msg) from e
-            elif 500 <= status_code < 600:
-                import random
-                max_retries = 3
-                retry_delay = 1.0
-                last_exc = e
-                for attempt in range(max_retries):
-                    jitter = random.uniform(0.8, 1.2)
-                    sleep_time = min(30.0, retry_delay * jitter)
-                    logger.warning(
-                        "Upstash Redis 5xx error (HTTP %d). Attempt %d/%d. Retrying in %.2fs...",
-                        status_code, attempt + 1, max_retries, sleep_time
-                    )
-                    await asyncio.sleep(sleep_time)
-                    try:
-                        resp = await client.post(endpoint, json=json_data, timeout=timeout)
-                        resp.raise_for_status()
-                        return resp.json()
-                    except Exception as retry_err:
-                        last_exc = retry_err
-                        retry_delay *= 2.0
-                        
-                redacted_retry_msg = self._redact(str(last_exc))
-                logger.error("Upstash Redis retry failed after %d attempts: %s", max_retries, redacted_retry_msg)
-                raise RedisUnavailableError(redacted_retry_msg) from last_exc
-            else:
-                logger.error("Upstash Redis HTTP error (HTTP %d): %s", status_code, redacted_msg)
-                raise RedisUnavailableError(redacted_msg) from e
-        except httpx.RequestError as e:
-            redacted_msg = self._redact(str(e))
-            logger.error("Upstash Redis request error: %s", redacted_msg)
-            raise RedisUnavailableError(redacted_msg) from e
-
     async def lpush(self, key: str, value: str) -> int:
-        """
-        Pushes a value to the head of a list.
-        Returns the number of elements in the list after the push.
-        """
-        if key == "atrium:tasks" and isinstance(value, str):
-            try:
-                import json
-                import structlog
-                payload = json.loads(value)
-                if isinstance(payload, dict) and "correlation_id" not in payload:
-                    context = structlog.contextvars.get_contextvars()
-                    correlation_id = context.get("correlation_id")
-                    if correlation_id:
-                        payload["correlation_id"] = correlation_id
-                        value = json.dumps(payload)
-            except Exception:
-                pass
-
-        data = await self._request("", ["LPUSH", key, value])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return int(data["result"])
+        """Push a value to the head of a list."""
+        try:
+            client = self._get_client()
+            res = await client.lpush(self._hash_key(key), value)
+            return int(res)
+        except aioredis.AuthenticationError as ae:
+            raise RedisAuthError(self._redact(str(ae)))
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def llen(self, key: str) -> int:
-        """
-        Returns the length of the list stored at key.
-        """
-        data = await self._request("", ["LLEN", key])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        if data.get("result") is None:
-            return 0
-        return int(data["result"])
+        """Return the length of a list."""
+        try:
+            client = self._get_client()
+            res = await client.llen(self._hash_key(key))
+            return int(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
-    async def lindex(self, key: str, index: int) -> str | None:
-        """
-        Returns the element at index in the list stored at key.
-        """
-        data = await self._request("", ["LINDEX", key, str(index)])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return data.get("result")
+    async def lindex(self, key: str, index: int) -> Optional[str]:
+        """Get an element from a list by its index."""
+        try:
+            client = self._get_client()
+            res = await client.lindex(self._hash_key(key), index)
+            return res
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def brpop(self, key: str, timeout: int = 5) -> Optional[Tuple[str, str]]:
-        """
-        Blocks and pops a value from the tail of a list.
-        Returns a tuple of (key, value) or None if timeout is reached.
-        """
-        data = await self._request("", ["BRPOP", key, str(timeout)], timeout=float(timeout + 5))
-        if isinstance(data, dict):
-            if "error" in data:
-                raise RedisUnavailableError(self._redact(data["error"]))
-            result = data.get("result")
-            if result is not None and len(result) >= 2:
-                return (result[0], result[1])
-        return None
+        """Blocking pop from the tail of a list."""
+        try:
+            client = self._get_client()
+            res = await client.brpop(self._hash_key(key), timeout=timeout)
+            if res:
+                return (res[0], res[1])
+            return None
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def pipeline(self, commands: List[List]) -> List:
-        """
-        Sends a batch of commands to the Upstash Redis REST pipeline endpoint.
-        Returns a list of results for each command.
-        """
-        data = await self._request("pipeline", commands)
-        if not isinstance(data, list):
-            raise RedisUnavailableError(f"Unexpected pipeline response: {self._redact(str(data))}")
-            
-        out = []
-        for item in data:
-            if isinstance(item, dict) and "error" in item:
-                raise RedisUnavailableError(self._redact(item["error"]))
-            # Extract result value
-            if isinstance(item, dict) and "result" in item:
-                out.append(item["result"])
-            else:
-                out.append(item)
-        return out
+        """Execute a batch of commands atomically inside a pipeline."""
+        try:
+            client = self._get_client()
+            async with client.pipeline(transaction=True) as pipe:
+                for cmd in commands:
+                    hashed_cmd = list(pipe.execute_command.__code__.co_varnames) # Stub
+                    # Map and hash key parameters in command array
+                    hashed_cmd = list(cmd)
+                    if len(hashed_cmd) > 1:
+                        cmd_name = str(hashed_cmd[0]).upper()
+                        if cmd_name == "EVAL" and len(hashed_cmd) > 2:
+                            try:
+                                num_keys = int(hashed_cmd[2])
+                                for idx in range(3, min(3 + num_keys, len(hashed_cmd))):
+                                    hashed_cmd[idx] = self._hash_key(hashed_cmd[idx])
+                            except ValueError:
+                                pass
+                        else:
+                            hashed_cmd[1] = self._hash_key(hashed_cmd[1])
+                            if len(hashed_cmd) > 2 and cmd_name == "BRPOPLPUSH":
+                                hashed_cmd[2] = self._hash_key(hashed_cmd[2])
+                    pipe.execute_command(*hashed_cmd)
+                res = await pipe.execute()
+                return res
+        except aioredis.AuthenticationError as ae:
+            raise RedisAuthError(self._redact(str(ae)))
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def get(self, key: str) -> Optional[str]:
         """Get the value of a key."""
-        data = await self._request("", ["GET", key])
-        if isinstance(data, dict):
-            if "error" in data:
-                raise RedisUnavailableError(self._redact(data["error"]))
-            return data.get("result")
-        return None
+        try:
+            client = self._get_client()
+            res = await client.get(self._hash_key(key))
+            return res
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def setex(self, key: str, seconds: int, value: str) -> bool:
-        """Set key to hold the string value and set key to timeout after a given number of seconds."""
-        data = await self._request("", ["SET", key, value, "EX", str(seconds)])
-        if isinstance(data, dict):
-            if "error" in data:
-                raise RedisUnavailableError(self._redact(data["error"]))
-            return data.get("result") == "OK"
-        return False
+        """Set the value and expiration of a key."""
+        try:
+            client = self._get_client()
+            await client.setex(self._hash_key(key), seconds, value)
+            return True
+        except aioredis.AuthenticationError as ae:
+            raise RedisAuthError(self._redact(str(ae)))
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def delete(self, key: str) -> int:
         """Delete a key."""
-        data = await self._request("", ["DEL", key])
-        if isinstance(data, dict):
-            if "error" in data:
-                raise RedisUnavailableError(self._redact(data["error"]))
-            return int(data.get("result", 0))
-        return 0
+        try:
+            client = self._get_client()
+            res = await client.delete(self._hash_key(key))
+            return int(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def expire(self, key: str, seconds: int) -> bool:
-        """Set a timeout on key."""
-        data = await self._request("", ["EXPIRE", key, str(seconds)])
-        if isinstance(data, dict):
-            if "error" in data:
-                raise RedisUnavailableError(self._redact(data["error"]))
-            return int(data.get("result", 0)) == 1
-        return False
+        """Set a key's time to live in seconds."""
+        try:
+            client = self._get_client()
+            res = await client.expire(self._hash_key(key), seconds)
+            return bool(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def zadd(self, key: str, score: float, member: str) -> int:
-        """Add member with score to a sorted set."""
-        data = await self._request("", ["ZADD", key, str(score), member])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return int(data.get("result", 0))
+        """Add a member to a sorted set."""
+        try:
+            client = self._get_client()
+            res = await client.zadd(self._hash_key(key), {member: score})
+            return int(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def zrem(self, key: str, member: str) -> int:
-        """Remove member from a sorted set."""
-        data = await self._request("", ["ZREM", key, member])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return int(data.get("result", 0))
+        """Remove a member from a sorted set."""
+        try:
+            client = self._get_client()
+            res = await client.zrem(self._hash_key(key), member)
+            return int(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def zrangebyscore(self, key: str, min_score: float | str, max_score: float | str) -> List[str]:
-        """Return members in sorted set with scores between min_score and max_score."""
-        data = await self._request("", ["ZRANGEBYSCORE", key, str(min_score), str(max_score)])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        # Upstash REST returns the list inside the 'result' field
-        return data.get("result", [])
+        """Return a range of members in a sorted set by score."""
+        try:
+            client = self._get_client()
+            res = await client.zrangebyscore(self._hash_key(key), min_score, max_score)
+            return list(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def eval(self, script: str, numkeys: int, *args) -> Optional[Union[dict, list, str, int]]:
-        """Execute a Lua script on the Redis server."""
-        payload = ["EVAL", script, str(numkeys)] + list(args)
-        data = await self._request("", payload)
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return data.get("result")
+        """Execute a Lua script server-side."""
+        try:
+            client = self._get_client()
+            hashed_args = list(args)
+            for idx in range(min(numkeys, len(hashed_args))):
+                hashed_args[idx] = self._hash_key(hashed_args[idx])
+            res = await client.eval(script, numkeys, *hashed_args)
+            return res
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
+
     async def rpush(self, key: str, value: str) -> int:
         """Push a value to the tail of a list."""
-        data = await self._request("", ["RPUSH", key, value])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return int(data.get("result", 0))
+        try:
+            client = self._get_client()
+            res = await client.rpush(self._hash_key(key), value)
+            return int(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def lrange(self, key: str, start: int, stop: int) -> List[str]:
         """Return a range of elements from a list."""
-        data = await self._request("", ["LRANGE", key, str(start), str(stop)])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return data.get("result", [])
+        try:
+            client = self._get_client()
+            res = await client.lrange(self._hash_key(key), start, stop)
+            return list(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def brpoplpush(self, source: str, destination: str, timeout: int) -> Optional[str]:
-        """
-        Blocking pop from source and push to destination.
-        Returns the popped element or None if timeout is reached.
-        """
-        data = await self._request("", ["BRPOPLPUSH", source, destination, str(timeout)], timeout=float(timeout + 5))
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return data.get("result")
+        """Blocking pop from source and push to destination."""
+        try:
+            client = self._get_client()
+            res = await client.brpoplpush(self._hash_key(source), self._hash_key(destination), timeout=timeout)
+            return res
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def lrem(self, key: str, count: int, value: str) -> int:
-        """
-        Remove count occurrences of value from list key.
-        Returns the number of removed elements.
-        """
-        data = await self._request("", ["LREM", key, str(count), value])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return int(data.get("result", 0))
+        """Remove occurrences of a value from a list."""
+        try:
+            client = self._get_client()
+            res = await client.lrem(self._hash_key(key), count, value)
+            return int(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def sadd(self, key: str, member: str) -> int:
-        """Add a member to a set. Returns 1 if added, 0 if already exists."""
-        data = await self._request("", ["SADD", key, member])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return int(data.get("result", 0))
+        """Add a member to a set."""
+        try:
+            client = self._get_client()
+            res = await client.sadd(self._hash_key(key), member)
+            return int(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def srem(self, key: str, member: str) -> int:
-        """Remove a member from a set. Returns 1 if removed, 0 if not exists."""
-        data = await self._request("", ["SREM", key, member])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return int(data.get("result", 0))
+        """Remove a member from a set."""
+        try:
+            client = self._get_client()
+            res = await client.srem(self._hash_key(key), member)
+            return int(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def smembers(self, key: str) -> List[str]:
         """Return all members in a set."""
-        data = await self._request("", ["SMEMBERS", key])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return data.get("result", [])
+        try:
+            client = self._get_client()
+            res = await client.smembers(self._hash_key(key))
+            return list(res)
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def sismember(self, key: str, member: str) -> int:
-        """Check if member is in a set. Returns 1 if yes, 0 if no."""
-        data = await self._request("", ["SISMEMBER", key, member])
-        if isinstance(data, dict) and "error" in data:
-            raise RedisUnavailableError(self._redact(data["error"]))
-        return int(data.get("result", 0))
+        """Check set membership."""
+        try:
+            client = self._get_client()
+            res = await client.sismember(self._hash_key(key), member)
+            return 1 if res else 0
+        except aioredis.RedisError as re:
+            raise RedisUnavailableError(self._redact(str(re)))
 
     async def ping(self) -> bool:
-        """Checks liveness of the Upstash Redis instance. Returns True if responsive."""
+        """Checks liveness of the Redis instance."""
         try:
-            data = await self._request("", ["PING"])
-            if isinstance(data, dict) and data.get("result") == "PONG":
-                return True
-            return False
+            client = self._get_client()
+            res = await client.ping()
+            return bool(res)
         except Exception as e:
-            logger.warning("Upstash Redis ping failed: %s", self._redact(str(e)))
+            logger.warning("Redis ping failed: %s", self._redact(str(e)))
             return False
 
 # Expose singleton instance at module level

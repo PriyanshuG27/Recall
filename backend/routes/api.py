@@ -785,17 +785,16 @@ async def search_items(
             query=req.query
         )
 
-    async with get_db_scope(db) as conn:
-        results = await hybrid_search(
-            req.query,
-            user.id,
-            conn,
-            source_types=req.source_types,
-            tags=req.tags,
-            start_date=req.start_date,
-            end_date=req.end_date,
-            bypass_rewrite=req.rag
-        )
+    results = await hybrid_search(
+        req.query,
+        user.id,
+        db,
+        source_types=req.source_types,
+        tags=req.tags,
+        start_date=req.start_date,
+        end_date=req.end_date,
+        bypass_rewrite=req.rag
+    )
     
     # Limit results as requested (up to 5 for summaries mapping)
     results_limited = results[:req.limit]

@@ -400,7 +400,7 @@ async def telegram_webhook(
                     step = int(parts[1])
                     current_step_str = await redis.get(f"onboarding_step:{chat_id}")
                     if current_step_str and int(current_step_str) == step:
-                        background_tasks.add_task(advance_onboarding_step, chat_id, user_id, step, db, background_tasks)
+                        background_tasks.add_task(advance_onboarding_step, chat_id, user_id, step, None, background_tasks)
                 return {"status": "ok", "detail": "onboarding_skip_processed"}
                 
             elif data == "onboarding_tz_menu" or data == "onboarding_tz_back":
@@ -1699,7 +1699,7 @@ async def telegram_webhook(
                         chat_id,
                         user_id,
                         text_content,
-                        db,
+                        None,
                         message.get("message_id")
                     )
                     return {"status": "ok", "detail": "conversational_rag_triggered"}
@@ -1995,7 +1995,7 @@ async def process_remind_set_callback(
 # Phase 1 Conversational Onboarding & Debouncing Helper Functions
 # ---------------------------------------------------------------------------
 
-async def advance_onboarding_step(chat_id: str, user_id: int, current_step: int, db: psycopg.AsyncConnection, background_tasks: Optional[BackgroundTasks] = None, base_url: str = ""):
+async def advance_onboarding_step(chat_id: str, user_id: int, current_step: int, db: Optional[psycopg.AsyncConnection] = None, background_tasks: Optional[BackgroundTasks] = None, base_url: str = ""):
     next_step = current_step + 1
     if next_step <= 3:
         await redis.setex(f"onboarding_step:{chat_id}", 86400, str(next_step))
@@ -2016,9 +2016,11 @@ async def advance_onboarding_step(chat_id: str, user_id: int, current_step: int,
     else:
         # Completed onboarding!
         await redis.delete(f"onboarding_step:{chat_id}")
-        async with db.cursor() as cur:
-            await cur.execute("UPDATE users SET initial_onboarding_completed = TRUE WHERE id = %s;", (user_id,))
-            await db.commit()
+        from backend.db.connection import get_db_scope
+        async with get_db_scope(db) as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("UPDATE users SET initial_onboarding_completed = TRUE WHERE id = %s;", (user_id,))
+                await conn.commit()
             
         if background_tasks:
             background_tasks.add_task(trigger_first_session_magic, chat_id, user_id, base_url)

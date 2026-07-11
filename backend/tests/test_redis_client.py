@@ -1,70 +1,74 @@
 import pytest
-import httpx
 import unittest.mock as mock
+import redis.asyncio as aioredis
 from backend.services.redis_client import redis, RedisUnavailableError, RedisAuthError, UpstashRedis
 
 @pytest.mark.asyncio
 async def test_redis_lpush():
-    with mock.patch.object(redis, "_request", new_callable=mock.AsyncMock, return_value={"result": 3}):
+    mock_client = mock.AsyncMock()
+    mock_client.lpush.return_value = 3
+    with mock.patch.object(redis, "_get_client", return_value=mock_client):
         res = await redis.lpush("mykey", "myval")
         assert res == 3
+        mock_client.lpush.assert_called_once_with(redis._hash_key("mykey"), "myval")
 
 @pytest.mark.asyncio
 async def test_redis_brpop():
-    with mock.patch.object(redis, "_request", new_callable=mock.AsyncMock, return_value={"result": ["mykey", "myval"]}):
+    mock_client = mock.AsyncMock()
+    mock_client.brpop.return_value = ("mykey", "myval")
+    with mock.patch.object(redis, "_get_client", return_value=mock_client):
         res = await redis.brpop("mykey", timeout=10)
         assert res == ("mykey", "myval")
 
 @pytest.mark.asyncio
 async def test_redis_brpop_timeout():
-    with mock.patch.object(redis, "_request", new_callable=mock.AsyncMock, return_value={"result": None}):
+    mock_client = mock.AsyncMock()
+    mock_client.brpop.return_value = None
+    with mock.patch.object(redis, "_get_client", return_value=mock_client):
         res = await redis.brpop("mykey")
         assert res is None
 
 @pytest.mark.asyncio
 async def test_redis_pipeline_format():
-    with mock.patch.object(redis, "_request", new_callable=mock.AsyncMock, return_value=[{"result": "OK"}, {"result": "val1"}]):
+    mock_client = mock.MagicMock()
+    mock_pipe = mock.AsyncMock()
+    mock_client.pipeline.return_value.__aenter__.return_value = mock_pipe
+    mock_pipe.execute.return_value = ["OK", "val1"]
+    with mock.patch.object(redis, "_get_client", return_value=mock_client):
         res = await redis.pipeline([["SET", "k1", "v1"], ["GET", "k1"]])
         assert res == ["OK", "val1"]
 
 @pytest.mark.asyncio
 async def test_redis_eval():
-    with mock.patch.object(redis, "_request", new_callable=mock.AsyncMock, return_value={"result": 1}):
-        res = await redis.eval("return 1", [], [])
+    mock_client = mock.AsyncMock()
+    mock_client.eval.return_value = 1
+    with mock.patch.object(redis, "_get_client", return_value=mock_client):
+        res = await redis.eval("return 1", 0)
         assert res == 1
 
 @pytest.mark.asyncio
 async def test_redis_ping():
-    with mock.patch.object(redis, "_request", new_callable=mock.AsyncMock, return_value={"result": "PONG"}):
+    mock_client = mock.AsyncMock()
+    mock_client.ping.return_value = True
+    with mock.patch.object(redis, "_get_client", return_value=mock_client):
         res = await redis.ping()
         assert res is True
 
 @pytest.mark.asyncio
 async def test_redis_auth_error():
-    redis._client = None
-    mock_resp = mock.Mock()
-    mock_resp.status_code = 401
-    mock_resp.text = "Unauthorized"
-    mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-        "Unauthorized", request=mock.Mock(), response=mock_resp
-    )
-    mock_client = mock.Mock()
-    mock_client.post = mock.AsyncMock(return_value=mock_resp)
-
-    with mock.patch("httpx.AsyncClient") as mock_cls:
-        mock_cls.return_value = mock_client
+    mock_client = mock.AsyncMock()
+    mock_client.lpush.side_effect = aioredis.AuthenticationError("Auth failed")
+    with mock.patch.object(redis, "_get_client", return_value=mock_client):
         with pytest.raises(RedisAuthError):
-            await redis._request("", ["PING"])
+            await redis.lpush("mykey", "myval")
 
 @pytest.mark.asyncio
 async def test_redis_timeout_exception():
-    redis._client = None
-    mock_client = mock.Mock()
-    mock_client.post = mock.AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
-    with mock.patch("httpx.AsyncClient") as mock_cls:
-        mock_cls.return_value = mock_client
+    mock_client = mock.AsyncMock()
+    mock_client.lpush.side_effect = aioredis.RedisError("Timeout")
+    with mock.patch.object(redis, "_get_client", return_value=mock_client):
         with pytest.raises(RedisUnavailableError):
-            await redis._request("", ["PING"])
+            await redis.lpush("mykey", "myval")
 
 def test_redis_hash_key(monkeypatch):
     from backend.config import settings
@@ -92,21 +96,17 @@ async def test_redis_request_hashing(monkeypatch):
     from backend.config import settings
     monkeypatch.setattr(settings, "ENV", "development")
     client = UpstashRedis()
-    mock_http_client = mock.Mock()
-    mock_resp = mock.Mock()
-    mock_resp.status_code = 200
-    mock_resp.json = mock.Mock(return_value={"result": "OK"})
-    mock_http_client.post = mock.AsyncMock(return_value=mock_resp)
     
-    with mock.patch.object(client, "_get_client", return_value=mock_http_client):
-        # Single command
-        await client._request("", ["SET", "pending_timezone:123456789", "val"])
-        called_args = mock_http_client.post.call_args[1]["json"]
-        assert called_args[1].startswith("pending_timezone:")
-        assert not called_args[1].endswith("123456789")
-        
+    mock_client = mock.MagicMock()
+    mock_pipe = mock.AsyncMock()
+    mock_client.pipeline.return_value.__aenter__.return_value = mock_pipe
+    mock_pipe.execute.return_value = ["OK"]
+    
+    with mock.patch.object(client, "_get_client", return_value=mock_client):
         # Pipeline command
-        await client._request("pipeline", [["GET", "onboarding_step:-999"]])
-        called_args_pipeline = mock_http_client.post.call_args[1]["json"]
-        assert called_args_pipeline[0][1].startswith("onboarding_step:")
-        assert not called_args_pipeline[0][1].endswith("-999")
+        await client.pipeline([["SET", "pending_timezone:123456789", "val"]])
+        mock_pipe.execute_command.assert_called_once()
+        called_cmd = mock_pipe.execute_command.call_args[0]
+        assert called_cmd[0] == "SET"
+        assert called_cmd[1].startswith("pending_timezone:")
+        assert not called_cmd[1].endswith("123456789")

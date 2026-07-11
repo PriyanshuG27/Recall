@@ -217,7 +217,7 @@
         <li><strong>Credentials</strong>: Google Drive OAuth refresh tokens, which are encrypted immediately and used strictly to back up your notes to your Google Drive account.</li>
         <li><strong>Temporary Timezone Location</strong>: When configuring your profile, you may optionally send a geolocation pin. This coordinates payload is processed **ephemerally** to auto-detect your timezone offset and is **never stored permanently** in our database.</li>
         <li><strong>Operational Logs</strong>: We may temporarily collect IP addresses, request metadata, device information, and server logs for security, abuse prevention, debugging, and operational purposes.</li>
-        <li><strong>Error Tracking & Diagnostics</strong>: We use Sentry to record error logs, application performance data, and diagnostics to resolve software bugs and system failures.</li>
+        <li><strong>Error Tracking & Diagnostics</strong>: We may use diagnostic and error monitoring services such as Sentry to record error logs, application performance data, and diagnostics to resolve software bugs and system failures.</li>
       </ul>
 
       <h2>2. How We Use Your Information</h2>
@@ -238,14 +238,14 @@
       <h2>4. Cryptographic Security & Data Storage</h2>
       <p>Atrium employs encryption, access controls, rate limiting, system monitoring, and secure communication protocols designed to protect your data:</p>
       <ul>
-        <li><strong>At-Rest Encryption</strong>: Sensitive information is protected using encryption, hashing where appropriate, and managed cloud security controls.</li>
-        <li><strong>Infrastructure Isolation</strong>: Our hosted managed databases and secure in-memory caching layers store only ciphertexts and key-hashes for sensitive fields, reducing the risk and impact of unauthorized database access.</li>
+        <li><strong>At-Rest Encryption</strong>: Sensitive data is protected using industry-standard encryption and access controls where appropriate.</li>
+        <li><strong>Infrastructure Isolation</strong>: Our hosted database and caching layers employ access controls, encryption, and hashing to secure sensitive data fields, reducing the risk and impact of unauthorized access.</li>
         <li><strong>In-Transit Security</strong>: All network traffic between your browser, browser extension, Telegram Webhook, and backend servers is encrypted using Secure Sockets Layer/Transport Layer Security (HTTPS/TLS).</li>
       </ul>
 
       <h2>5. Downstream AI Processing & Sub-Processors</h2>
       <p>To summarize, tag, and generate vector embeddings for your saved content, Atrium routes plaintext data to third-party AI interfaces. We transmit only the minimum information reasonably necessary to perform the AI feature you requested. These third-party processors include:
-        <code>Google Gemini API</code>, <code>Groq API</code>, <code>NVIDIA NIM</code>, and <code>Modal Labs</code> (for voice transcription and remote batch services).
+        <code>Google Gemini API</code>, <code>Groq API</code>, and <code>NVIDIA NIM</code>.
       </p>
 
       <div class="alert-box">
@@ -286,11 +286,6 @@
               <td style="padding: 0.75rem;">Prompts and extracted texts</td>
             </tr>
             <tr style="border-bottom: 1px solid rgba(244, 239, 235, 0.05);">
-              <td style="padding: 0.75rem; font-weight: 500;">Modal Labs</td>
-              <td style="padding: 0.75rem;">Audio Transcription & Remote batch AI</td>
-              <td style="padding: 0.75rem;">Audio files, chunk texts for embeddings</td>
-            </tr>
-            <tr style="border-bottom: 1px solid rgba(244, 239, 235, 0.05);">
               <td style="padding: 0.75rem; font-weight: 500;">Neon Database</td>
               <td style="padding: 0.75rem;">Managed Database Storage</td>
               <td style="padding: 0.75rem;">Application data, hashed credentials, encrypted text records</td>
@@ -323,24 +318,27 @@
       <p>You retain full sovereignty and ownership over your data:</p>
       <ul>
         <li><strong>Account Deletion</strong>: When you delete your account (which triggers a <code>DELETE /api/me</code> request), Atrium deletes your account data from active systems. Residual copies may temporarily persist in operational backups until those backups expire or are overwritten.</li>
-        <li><strong>Data Portability</strong>: You can export all saved items, tags, and AI summaries as a structured JSON file (<code>GET /api/export</code>) or as a structured, Markdown-configured zipped Obsidian Vault (<code>GET /api/export/zip</code>) directly from your dashboard settings.</li>
+        <li><strong>Data Portability</strong>: You can export all saved items, tags, and AI summaries using the export features available within your dashboard settings.</li>
         <li><strong>Data Retention Policy</strong>: We retain your personal data and content only for as long as your account remains active. Ephemeral background task payloads in our queues are routinely removed after processing. We do not maintain long-term offline database backups; point-in-time recovery logs are retained only for a limited operational period.</li>
       </ul>
 
       <h2>8. Third-Party Services</h2>
-      <p>Atrium integrates with several independent third-party services to function (such as Telegram, Google Drive, Groq, NVIDIA, and Modal Labs). Atrium does not control or accept responsibility for the independent privacy practices of third-party providers.</p>
+      <p>Atrium integrates with several independent third-party services to function (such as Telegram, Google Drive, Groq, and NVIDIA). Atrium does not control or accept responsibility for the independent privacy practices of third-party providers.</p>
 
       <h2>9. Security Disclaimer & Safeguards</h2>
       <p>We implement administrative, physical, and technical safeguards designed to protect the integrity of your data. However, you acknowledge that no transmission over the internet or cloud infrastructure is 100% secure. We cannot guarantee that unauthorized access, leaks, or system hacks will never occur, and your use of the Service is at your own risk.</p>
 
-      <h2>10. International Data Transfers</h2>
+      <h2>10. Security Reports</h2>
+      <p>If you believe you have discovered a security vulnerability, please contact us at <code>atriumhelp@outlook.com</code>. Please do not publicly disclose vulnerabilities until we have had a reasonable opportunity to investigate and address them.</p>
+
+      <h2>11. International Data Transfers</h2>
       <p>Your information may be processed in countries other than your own by our service providers (including the United States). Where applicable, we take reasonable steps to ensure such transfers comply with applicable law.</p>
 
-      <h2>11. Territorial Scope & GDPR</h2>
+      <h2>12. Territorial Scope & GDPR</h2>
       <p>Atrium is operated from India. If applicable law (including GDPR or similar privacy laws) applies to your use of the Service, we will process personal data in accordance with those applicable legal requirements.</p>
 
-      <h2>12. Privacy Inquiries</h2>
-      <p>For questions regarding this Privacy Policy, your data deletion rights, or data exports, contact us at <code>privacy@atrium.so</code> or via Telegram at <code>@atrium_support</code>.</p>
+      <h2>13. Privacy Inquiries</h2>
+      <p>For questions regarding this Privacy Policy, your data deletion rights, data exports, or security concerns, contact us at <code>atriumhelp@outlook.com</code>.</p>
     </main>
 
     <footer>
