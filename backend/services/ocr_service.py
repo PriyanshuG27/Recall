@@ -240,7 +240,7 @@ async def perform_nvidia_ocr(image_bytes: bytes, api_key: str) -> Optional[str]:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Provide a detailed caption or summary of this image."},
+                        {"type": "text", "text": "Extract all readable text, characters, URLs, and links from this image verbatim. Do not explain, describe, or summarize the image. Output only the raw extracted text."},
                         {
                             "type": "image_url",
                             "image_url": {
