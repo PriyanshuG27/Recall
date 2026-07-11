@@ -171,11 +171,22 @@ export default function Settings() {
     }
   };
 
+  const triggerDownload = (url) => {
+    let iframe = document.getElementById('hidden-download-iframe');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'hidden-download-iframe';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+    }
+    iframe.src = url;
+  };
+
   const handleExportData = () => {
     AudioEngine.playClick();
     setExporting(true);
     addToast('Starting GDPR data export...', 'info');
-    window.location.href = '/api/export';
+    triggerDownload('/api/export');
     setTimeout(() => setExporting(false), 2000);
   };
 
@@ -183,7 +194,7 @@ export default function Settings() {
     AudioEngine.playClick();
     setExportingZip(true);
     addToast('Generating Obsidian Vault export...', 'info');
-    window.location.href = '/api/export/zip';
+    triggerDownload('/api/export/zip');
     setTimeout(() => setExportingZip(false), 2000);
   };
 
@@ -621,7 +632,7 @@ export default function Settings() {
                 onClick={() => {
                   AudioEngine.playClick();
                   addToast('Downloading extension ZIP...', 'info');
-                  window.location.href = '/api/extension/download';
+                  triggerDownload('/api/extension/download');
                 }}
                 style={{
                   width: '100%',
