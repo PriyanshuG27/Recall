@@ -28,6 +28,26 @@ from backend.services.encryption import encrypt, decrypt
 from backend.services.search_service import embed_text
 from backend.services.ai_cascade import AICascade, ai_cascade, current_mood_var
 
+_task_ready_event: Optional[asyncio.Event] = None
+
+def get_task_ready_event() -> asyncio.Event:
+    global _task_ready_event
+    if _task_ready_event is None:
+        try:
+            asyncio.get_running_loop()
+            _task_ready_event = asyncio.Event()
+        except RuntimeError:
+            _task_ready_event = asyncio.Event()
+    return _task_ready_event
+
+def notify_new_task():
+    """Notify the task worker that a new task is available in the queue."""
+    try:
+        event = get_task_ready_event()
+        event.set()
+    except Exception:
+        pass
+
 # Ingesters
 from backend.services.pdf_ingester import ingest_pdf
 from backend.services.url_ingester import ingest_url
@@ -1541,6 +1561,7 @@ async def start_worker_task() -> None:
             break
 
         try:
+            get_task_ready_event().clear()
             # Poll Upstash Redis using BRPOPLPUSH with 2s timeout
             task_json = await redis.brpoplpush("atrium:tasks", "atrium:processing", timeout=2)
             
@@ -1573,7 +1594,13 @@ async def start_worker_task() -> None:
             else:
                 semaphore.release()
                 holding_semaphore = False
-                # brpoplpush blocks for 2 seconds, so we loop back immediately without sleeping.
+                # brpoplpush blocks for 2 seconds. To limit Upstash commands to 2.7K/day on idle,
+                # we wait for task_ready_event to be set, or timeout after 30 seconds.
+                try:
+                    event = get_task_ready_event()
+                    await asyncio.wait_for(event.wait(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    pass
                     
         except asyncio.CancelledError:
             if holding_semaphore:

@@ -1820,6 +1820,8 @@ async def retry_dlq_task(
             task_payload = task_payload_raw
             
         await redis.lpush("atrium:tasks", json.dumps(task_payload))
+        from backend.worker import notify_new_task
+        notify_new_task()
         
         await cur.execute("UPDATE dead_letter_queue SET retried = TRUE WHERE id = %s;", (id,))
         await db.commit()

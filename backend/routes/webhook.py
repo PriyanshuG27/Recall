@@ -1591,6 +1591,8 @@ async def telegram_webhook(
                 "correlation_id": correlation_id
             }
             background_tasks.add_task(redis.lpush, "atrium:tasks", json.dumps(task))
+            from backend.worker import notify_new_task
+            background_tasks.add_task(notify_new_task)
             
             ack_msg = "Got it! Summarizing and adding to your graph..."
             background_tasks.add_task(send_telegram_ack, chat_id, ack_msg, None, message.get("message_id"))
@@ -2279,6 +2281,8 @@ async def wait_and_process_batch(chat_id: str, user_id: int, expected_time: str)
     }
     
     await redis.lpush("atrium:tasks", json.dumps(batch_task))
+    from backend.worker import notify_new_task
+    notify_new_task()
     logger.info("Consolidated batch task of %d items queued for chat_id %s", len(items), chat_id)
 
 

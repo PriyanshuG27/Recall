@@ -228,10 +228,31 @@ async def bot_session_poll(
     "/logout",
     response_model=LoginStatusResponse,
     summary="Logout session",
-    description="Clears the atrium_session JWT cookie.",
+    description="Clears the atrium_session JWT cookie and blacklists the token.",
 )
-async def auth_logout(response: Response):
-    """Clear session cookie and log out."""
+async def auth_logout(request: Request, response: Response):
+    """Clear session cookie, blacklist token, and log out."""
+    token = request.cookies.get("atrium_session") or request.cookies.get("jwt")
+    auth_header = request.headers.get("Authorization")
+    if not token and auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+
+    if token:
+        try:
+            import jwt
+            from backend.config import settings
+            from backend.services.redis_client import redis
+            # Decode to find expiry time
+            payload = jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
+            exp = payload.get("exp")
+            if exp:
+                remaining_seconds = int(exp - time.time())
+                if remaining_seconds > 0:
+                    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+                    await redis.setex(f"jwt:blacklist:{token_hash}", remaining_seconds, "1")
+        except Exception as e:
+            logger.warning("Failed to blacklist JWT token on logout: %s", e)
+
     response.delete_cookie("atrium_session", httponly=True, secure=True, samesite="lax")
     response.delete_cookie("jwt", httponly=True, secure=True, samesite="lax")
     return {"status": "ok", "message": "Logged out"}

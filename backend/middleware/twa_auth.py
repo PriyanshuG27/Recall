@@ -1,5 +1,8 @@
 import base64
 import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
 import hmac
 import json
 import time
@@ -202,11 +205,23 @@ async def get_jwt_user_by_token(
     db: psycopg.AsyncConnection,
     set_cookies: bool = True
 ) -> UserContext:
+    # Check JWT Blacklist in Redis
+    try:
+        from backend.services.redis_client import redis
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        is_blacklisted = await redis.get(f"jwt:blacklist:{token_hash}")
+        if is_blacklisted:
+            raise HTTPException(status_code=401, detail="Session expired. Please log in again.", headers=CookieDict() if set_cookies else None)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Failed to verify JWT blacklist check: %s", e)
+
     try:
         payload = verify_jwt(token, settings.JWT_SECRET)
     except Exception:
         raise HTTPException(status_code=401, detail="Not authenticated", headers=CookieDict() if set_cookies else None)
-        
+
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated", headers=CookieDict() if set_cookies else None)

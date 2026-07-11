@@ -238,6 +238,8 @@ async def lifespan(app: FastAPI):
                         payload["from_dlq"] = True
 
                         await redis.lpush("atrium:tasks", json.dumps(payload))
+                        from backend.worker import notify_new_task
+                        notify_new_task()
                         await cur.execute("UPDATE dead_letter_queue SET retried = TRUE WHERE id = %s;", (dlq_id,))
                         requeued_count += 1
                         
