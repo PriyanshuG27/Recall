@@ -489,10 +489,10 @@ export default function Drill() {
       )}
 
       {/* ── Progress indicator ── */}
-      {cards.length > 0 && <DrillProgress current={currentIndex + 1} total={cards.length} />}
+      {bootPhase === 'session' && cards.length > 0 && <DrillProgress current={currentIndex + 1} total={cards.length} />}
 
       {/* ── Transmission card ── */}
-      {cards.length > 0 && (
+      {bootPhase === 'session' && cards.length > 0 && (
         <div
           key={currentIndex}
           style={{
@@ -512,7 +512,7 @@ export default function Drill() {
       )}
 
       {/* ── Keyboard Shortcut Hint Bar ── */}
-      {!feedback && cards.length > 0 && (
+      {bootPhase === 'session' && !feedback && cards.length > 0 && (
         <div 
           className="drill-keyboard-hints"
           style={{
